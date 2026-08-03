@@ -1,4 +1,28 @@
-"""Cliente REST para consumir un endpoint de Databricks Model Serving."""
+"""Cliente REST pequeño y explícito para Databricks Model Serving.
+
+El módulo encapsula cuatro responsabilidades que conviene mantener separadas:
+
+1. Leer la configuración desde variables de entorno sin exponer el token.
+2. Construir la URL y el payload que espera Databricks.
+3. Traducir errores de transporte, HTTP y formato a una excepción del dominio.
+4. Ofrecer una API cómoda para trabajar con listas o con ``pandas.DataFrame``.
+
+El cliente usa el formato ``dataframe_split`` porque conserva tanto los nombres
+como el orden de las columnas. Esto es importante: un endpoint servido con una
+firma de modelo espera las mismas columnas y tipos que recibió durante el
+entrenamiento. El cliente no intenta corregir nombres, reordenar features ni
+convertir la respuesta en una etiqueta concreta; esas decisiones pertenecen al
+contrato del modelo y deben validarse antes de invocar el endpoint.
+
+Seguridad:
+    ``DATABRICKS_TOKEN`` solo se usa para construir el header Authorization. No
+    se imprime, no se incluye en las excepciones y no se persiste en disco.
+
+Reintentos:
+    El módulo no reintenta automáticamente. Un reintento puede duplicar carga
+    o retrasar una respuesta cuando el endpoint escala desde cero. La política
+    de reintentos debe vivir en la aplicación que conoce el contexto de negocio.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +34,7 @@ import pandas as pd
 import requests
 
 TIMEOUT_SEGUNDOS = 60
-"""Tiempo máximo, en segundos, para esperar la respuesta de Databricks."""
+"""Tiempo máximo, en segundos, para esperar una respuesta del endpoint."""
 
 _VARIABLES_REQUERIDAS = (
     "DATABRICKS_HOST",
@@ -18,6 +42,8 @@ _VARIABLES_REQUERIDAS = (
     "DATABRICKS_ENDPOINT_NAME",
 )
 
+# Estas explicaciones convierten códigos HTTP frecuentes en mensajes accionables.
+# Para un código no contemplado se conserva una explicación genérica.
 _CAUSAS_HTTP: dict[int, str] = {
     400: " ".join(
         (
@@ -35,11 +61,28 @@ _CAUSAS_HTTP: dict[int, str] = {
 
 
 class DatabricksEndpointError(RuntimeError):
-    """Error controlado al consultar o interpretar un endpoint de Databricks."""
+    """Error controlado al consultar o interpretar un endpoint de Databricks.
+
+    La excepción unifica fallos de configuración, red, HTTP y contrato de
+    respuesta. Así, una aplicación consumidora puede capturar un único tipo sin
+    depender de los detalles internos de ``requests``.
+    """
 
 
 def _leer_configuracion() -> tuple[str, str, str]:
-    """Lee y valida las variables de entorno necesarias para la consulta."""
+    """Lee y valida las variables necesarias para invocar el endpoint.
+
+    Se eliminan espacios accidentales al leer cada variable. La validación se
+    realiza antes de construir el payload o iniciar una conexión, de modo que
+    un error de configuración falla rápido y no se confunde con un error remoto.
+
+    Returns:
+        Una tupla ``(host, token, nombre_endpoint)`` ya normalizada en cuanto a
+        espacios exteriores.
+
+    Raises:
+        DatabricksEndpointError: Si falta una o más variables requeridas.
+    """
     valores = {nombre: os.getenv(nombre, "").strip() for nombre in _VARIABLES_REQUERIDAS}
     faltantes = [nombre for nombre, valor in valores.items() if not valor]
     if faltantes:
@@ -57,14 +100,44 @@ def _leer_configuracion() -> tuple[str, str, str]:
 
 
 def _construir_url(host: str, nombre_endpoint: str) -> str:
-    """Construye la URL HTTPS de invocación del endpoint."""
+    """Construye la URL HTTPS estándar de invocación.
+
+    ``DATABRICKS_HOST`` puede recibirse con o sin esquema y con una barra final;
+    el endpoint puede recibirse con barras laterales. Se limpian únicamente esas
+    variantes de formato para evitar URLs duplicadas. El esquema final siempre
+    es HTTPS, porque el token viaja en el header Authorization.
+
+    Args:
+        host: Dominio del workspace, opcionalmente precedido por ``http://`` o
+            ``https://``.
+        nombre_endpoint: Nombre lógico del endpoint de Model Serving.
+
+    Returns:
+        URL con la ruta ``/serving-endpoints/<nombre>/invocations``.
+    """
     host_limpio = host.removeprefix("https://").removeprefix("http://").rstrip("/")
     endpoint_limpio = nombre_endpoint.strip("/")
     return f"https://{host_limpio}/serving-endpoints/{endpoint_limpio}/invocations"
 
 
 def _extraer_predicciones(respuesta: requests.Response) -> list[Any]:
-    """Convierte la respuesta JSON en una lista de predicciones validada."""
+    """Valida el JSON exitoso y devuelve la lista ``predictions``.
+
+    Un status HTTP 2xx no garantiza que el cuerpo tenga el contrato que espera
+    este cliente. Por eso se valida explícitamente que el cuerpo sea un objeto,
+    que contenga ``predictions`` y que ese campo sea una lista.
+
+    Args:
+        respuesta: Respuesta de ``requests`` cuyo status ya fue considerado
+            exitoso por ``consultar_endpoint``.
+
+    Returns:
+        Lista de predicciones sin transformar sus valores.
+
+    Raises:
+        DatabricksEndpointError: Si el cuerpo no es JSON válido o no cumple el
+            contrato de respuesta.
+    """
     try:
         contenido: Any = respuesta.json()
     except ValueError as error:
@@ -94,11 +167,21 @@ def _extraer_predicciones(respuesta: requests.Response) -> list[Any]:
 
 
 def _mensaje_error_http(respuesta: requests.Response) -> str:
-    """Genera un mensaje consistente para errores HTTP de Databricks."""
+    """Genera un mensaje HTTP consistente y útil para diagnóstico.
+
+    El texto de Databricks se conserva porque suele incluir la causa concreta
+    (firma incompatible, permisos, endpoint iniciándose, etc.). El token no forma
+    parte de ``respuesta.text`` generado por este cliente y nunca se concatena a
+    este mensaje.
+    """
     causa = _CAUSAS_HTTP.get(
         respuesta.status_code,
-        "Revisa la respuesta y la configuración del endpoint; el código no está "
-        "mapeado explícitamente.",
+        " ".join(
+            (
+                "Revisa la respuesta y la configuración del endpoint; el código",
+                "no está mapeado explícitamente.",
+            )
+        ),
     )
     return (
         f"Error HTTP {respuesta.status_code} al consultar Databricks. "
@@ -107,18 +190,22 @@ def _mensaje_error_http(respuesta: requests.Response) -> str:
 
 
 def consultar_endpoint(columnas: list[str], datos: list[list[Any]]) -> list[Any]:
-    """Consulta un endpoint de Databricks usando el formato ``dataframe_split``.
+    """Invoca un endpoint usando el formato ``dataframe_split``.
 
     Args:
-        columnas: Nombres de las columnas en el mismo orden de cada fila de ``datos``.
-        datos: Filas que se enviarán al modelo.
+        columnas: Nombres de las features en el orden exacto esperado por el
+            modelo. El endpoint distingue nombres y orden.
+        datos: Filas a enviar. Cada fila debe tener el mismo número de valores
+            que ``columnas``. Puede ser una lista vacía si el endpoint acepta un
+            lote vacío, aunque normalmente conviene evitar esa llamada.
 
     Returns:
-        Lista de predicciones devuelta por Databricks.
+        Lista de predicciones tal como la entrega Databricks.
 
     Raises:
-        DatabricksEndpointError: Si falta configuración, falla la red, ocurre un
-            error HTTP o la respuesta no tiene el formato esperado.
+        DatabricksEndpointError: Si los argumentos no son coherentes, falta
+            configuración, falla la red, ocurre un error HTTP o la respuesta no
+            cumple el contrato ``{"predictions": [...]}``.
     """
     if not columnas:
         raise DatabricksEndpointError("La lista 'columnas' no puede estar vacía.")
@@ -130,6 +217,9 @@ def consultar_endpoint(columnas: list[str], datos: list[list[Any]]) -> list[Any]
 
     host, token, nombre_endpoint = _leer_configuracion()
     url = _construir_url(host, nombre_endpoint)
+
+    # ``dataframe_split`` es el contrato de entrada del endpoint: las columnas
+    # viajan una sola vez y ``data`` conserva las filas en el mismo orden.
     payload = {
         "dataframe_split": {
             "columns": columnas,
@@ -164,6 +254,8 @@ def consultar_endpoint(columnas: list[str], datos: list[list[Any]]) -> list[Any]
             "Causa probable: fallo de transporte o configuración de requests."
         ) from error
 
+    # Se acepta cualquier 2xx. La comprobación adicional contra _CAUSAS_HTTP
+    # mantiene el mensaje específico si Databricks devuelve uno de esos códigos.
     if respuesta.status_code in _CAUSAS_HTTP or not 200 <= respuesta.status_code < 300:
         raise DatabricksEndpointError(_mensaje_error_http(respuesta))
 
@@ -171,16 +263,24 @@ def consultar_endpoint(columnas: list[str], datos: list[list[Any]]) -> list[Any]
 
 
 def predecir_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Agrega las predicciones de Databricks a una copia del DataFrame.
+    """Añade predicciones a una copia de un DataFrame.
+
+    El DataFrame original no se modifica. La conversión a JSON ``split`` hace
+    que pandas serialice correctamente valores compatibles con JSON, incluyendo
+    fechas cuando existen. Después de consultar el endpoint se comprueba que
+    haya exactamente una predicción por fila antes de construir el resultado.
 
     Args:
-        dataframe: DataFrame cuyas columnas y filas se enviarán al endpoint.
+        dataframe: DataFrame cuyas columnas y filas coinciden con la firma del
+            modelo servido.
 
     Returns:
         Copia del DataFrame original con la columna ``prediccion`` al final.
 
     Raises:
-        DatabricksEndpointError: Si la respuesta no tiene una predicción por fila.
+        TypeError: Si ``dataframe`` no es una instancia de ``pandas.DataFrame``.
+        DatabricksEndpointError: Si falla la invocación o el endpoint devuelve
+            una cantidad de predicciones distinta a la cantidad de filas.
     """
     if not isinstance(dataframe, pd.DataFrame):
         raise TypeError("'dataframe' debe ser una instancia de pandas.DataFrame.")
@@ -202,6 +302,8 @@ def predecir_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
+    # Este bloque es una prueba manual mínima. Requiere las tres variables de
+    # entorno y un endpoint compatible; no se ejecuta al importar el paquete.
     columnas_iris = [
         "sepal length (cm)",
         "sepal width (cm)",

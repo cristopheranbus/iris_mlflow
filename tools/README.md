@@ -1,168 +1,237 @@
 # Cliente REST para Databricks Model Serving
 
-Cliente Python para consumir un endpoint de Databricks Model Serving mediante REST API. Envía observaciones usando el formato `dataframe_split` y devuelve la lista de predicciones. También incluye una función para consultar directamente un `pandas.DataFrame`.
+Este paquete contiene el cliente Python que consume el endpoint de clasificación de Iris publicado en Databricks Model Serving. Convierte una entrada tabular en una petición REST y la respuesta en una lista de predicciones o en un `pandas.DataFrame`.
 
-## Requisitos
+El cliente no entrena modelos, no registra runs de MLflow, no crea endpoints y no administra secretos. Solo invoca un endpoint ya publicado y traduce sus errores a `DatabricksEndpointError`.
+
+## Estructura
+
+```text
+tools/
+├── pyproject.toml
+├── uv.lock
+├── README.md
+├── src/databricks_endpoint_client/
+│   ├── __init__.py
+│   └── client.py
+└── tests/test_client.py
+```
+
+El notebook de prueba para ejecutar desde un cluster de Databricks está en la raíz del proyecto: [`../test_endpoint.ipynb`](../test_endpoint.ipynb).
+
+## Requisitos e instalación
 
 - Python 3.12 o superior.
-- Un endpoint activo de Databricks Model Serving.
-- Un token con permisos para invocar el endpoint.
 - `uv` instalado.
+- Un endpoint activo de Databricks Model Serving.
+- Un token o secreto con permiso `CAN_QUERY`.
+- La firma de entrada del modelo: nombres, orden y tipos de columnas.
 
-El token nunca se escribe en el código ni se imprime en los mensajes de error.
-
-## Crear el entorno con uv
-
-Desde la carpeta `tools`:
+Desde esta carpeta (`tools`):
 
 ```powershell
 uv venv --python 3.12
 uv sync --dev
 ```
 
-`uv sync --dev` instala las dependencias de ejecución y las herramientas de desarrollo declaradas en `pyproject.toml`: `requests`, `pandas`, `pytest`, `ruff`, `mypy`, `pandas-stubs` y `types-requests`.
+`uv.lock` fija las versiones resueltas. Si se actualiza una dependencia, regenera el lockfile y revisa el diff antes de confirmarlo.
 
-## Variables de entorno en PowerShell
+Dependencias de ejecución: `requests` para HTTP y `pandas` para la adaptación de DataFrames. Dependencias de desarrollo: `pytest`, `ruff`, `mypy`, `pandas-stubs` y `types-requests`.
+
+## Configuración segura
+
+En PowerShell, configura las variables solo para la sesión actual:
 
 ```powershell
 $env:DATABRICKS_HOST = "mi-workspace.cloud.databricks.com"
 $env:DATABRICKS_TOKEN = "dapi-..."
-$env:DATABRICKS_ENDPOINT_NAME = "iris-endpoint"
+$env:DATABRICKS_ENDPOINT_NAME = "iris-random-forest"
 ```
 
-`DATABRICKS_HOST` puede incluir `https://`; el cliente normaliza el valor y construye siempre una URL HTTPS con este formato:
+| Variable | Obligatoria | Descripción |
+|---|---:|---|
+| `DATABRICKS_HOST` | Sí | Dominio del workspace; puede incluir `https://` y una barra final. |
+| `DATABRICKS_TOKEN` | Sí | Credencial enviada como `Bearer token`. |
+| `DATABRICKS_ENDPOINT_NAME` | Sí | Nombre lógico del endpoint de Model Serving. |
+
+El cliente normaliza el host y construye siempre:
 
 ```text
 https://<workspace>/serving-endpoints/<endpoint-name>/invocations
 ```
 
-Las variables solo duran mientras esté abierta la sesión de PowerShell. Para una ejecución automatizada, utiliza el gestor de secretos de tu entorno; no guardes el token en Git, en el README ni en archivos `.py`.
+Para automatización, usa el gestor de secretos de la plataforma. No guardes el token en el README, notebooks, archivos Python, historial de Git ni variables persistentes de usuario. El cliente no imprime el token ni lo incluye intencionalmente en excepciones.
 
-## Ejecutar el script
+## Contrato de entrada y salida
 
-Con las variables definidas:
+`consultar_endpoint` envía el formato `dataframe_split`:
 
-```powershell
-uv run python .\src\databricks_endpoint_client\client.py
+```json
+{
+  "dataframe_split": {
+    "columns": ["SepalLengthCm", "SepalWidthCm"],
+    "data": [[5.1, 3.5]]
+  }
+}
 ```
 
-El ejemplo ejecutable envía estas cuatro columnas y tres observaciones Iris:
+Reglas del contrato:
+
+1. `columns` debe tener al menos un nombre.
+2. Cada fila de `data` debe tener tantos valores como columnas.
+3. Los nombres deben coincidir exactamente con la firma del modelo.
+4. El orden de las columnas debe ser el esperado por el modelo.
+5. Los tipos deben ser compatibles con la firma publicada.
+6. La respuesta debe ser JSON con una lista llamada `predictions`.
+
+El cliente valida las reglas estructurales locales, pero no puede descubrir la firma del modelo ni corregir columnas equivocadas. Un HTTP 400 suele indicar una incompatibilidad con ella.
+
+## API pública
+
+### `consultar_endpoint(columnas, datos)`
+
+Es la API de bajo nivel. Devuelve las predicciones sin transformarlas:
 
 ```python
-columnas = [
-    "SepalLengthCm",
-    "SepalWidthCm",
-    "PetalLengthCm",
-    "PetalWidthCm",
-]
+from databricks_endpoint_client import consultar_endpoint
+
+columnas = ["SepalLengthCm", "SepalWidthCm", "PetalLengthCm", "PetalWidthCm"]
+datos = [[5.1, 3.5, 1.4, 0.2], [6.4, 3.2, 4.5, 1.5]]
+
+predicciones = consultar_endpoint(columnas, datos)
+print(predicciones)
 ```
 
-El endpoint debe aceptar exactamente los nombres y el orden de columnas que espera el modelo.
+### `predecir_dataframe(dataframe)`
 
-## Notebook para probarlo en Databricks
-
-El notebook [`notebooks/probar_endpoint_databricks.ipynb`](notebooks/probar_endpoint_databricks.ipynb) permite probar el endpoint directamente desde un cluster de Databricks.
-
-1. Importa el notebook en tu workspace.
-2. Crea o identifica un secret scope y guarda allí el token de Databricks.
-3. Ejecuta la primera celda y completa los widgets `DATABRICKS_HOST`, `DATABRICKS_ENDPOINT_NAME`, `DATABRICKS_SECRET_SCOPE` y `DATABRICKS_SECRET_KEY`.
-4. Ejecuta las celdas en orden.
-5. Revisa el código HTTP, las predicciones y el DataFrame final.
-
-El notebook nunca imprime el token. El host se normaliza y la URL final queda como `https://<workspace>/serving-endpoints/<endpoint-name>/invocations`. Si el modelo usa otras columnas, cambia únicamente las listas `columnas` y `datos` por valores que coincidan con la firma del endpoint.
-
-### Valores confirmados para el endpoint Iris
-
-Para el endpoint actual, usa estos valores:
-
-```text
-DATABRICKS_HOST=https://dbc-f2dbc696-258a.cloud.databricks.com
-DATABRICKS_ENDPOINT_NAME=iris-random-forest
-```
-
-El endpoint está en estado `READY`, usa el modelo `iris_random_forest-1` y tiene scale-to-zero. La primera invocación puede tardar aproximadamente entre 15 y 30 segundos mientras el servicio inicia; el notebook utiliza un timeout de 60 segundos.
-
-El token debe pertenecer a una identidad con permiso `CAN_QUERY` sobre el endpoint. Los nombres `DATABRICKS_SECRET_SCOPE` y `DATABRICKS_SECRET_KEY` deben completarse con los valores reales del workspace.
-
-La firma de entrada confirmada es:
-
-```python
-["SepalLengthCm", "SepalWidthCm", "PetalLengthCm", "PetalWidthCm"]
-```
-
-Las cuatro columnas deben enviarse como valores numéricos `double`/`float64`. El endpoint no espera `Id` ni `Species`.
-
-## Usar el cliente desde otro módulo
+Es la API recomendada cuando la aplicación ya trabaja con pandas:
 
 ```python
 import pandas as pd
+from databricks_endpoint_client import predecir_dataframe
 
-from databricks_endpoint_client import consultar_endpoint, predecir_dataframe
-
-columnas = ["sepal length (cm)", "sepal width (cm)"]
-datos = [[5.1, 3.5], [6.4, 3.2]]
-predicciones = consultar_endpoint(columnas, datos)
-
-dataframe = pd.DataFrame(datos, columns=columnas)
-resultado = predecir_dataframe(dataframe)
-print(predicciones)
-print(resultado)
+entrada = pd.DataFrame(
+    [[5.1, 3.5, 1.4, 0.2], [6.4, 3.2, 4.5, 1.5]],
+    columns=["SepalLengthCm", "SepalWidthCm", "PetalLengthCm", "PetalWidthCm"],
+)
+resultado = predecir_dataframe(entrada)
 ```
 
-`predecir_dataframe` convierte el DataFrame a `dataframe_split`, consulta el endpoint, devuelve una copia y agrega la columna `prediccion`. El DataFrame original no se modifica. Si Databricks devuelve una cantidad de predicciones diferente a la cantidad de filas, se lanza un error antes de devolver el resultado.
+La función convierte el DataFrame a `dataframe_split`, consulta el endpoint, comprueba que haya una predicción por fila y devuelve una copia con `prediccion`. El DataFrame original no se modifica.
 
-## Ejecutar pruebas
+## Errores y diagnóstico
 
-Las pruebas no llaman a Databricks: simulan `requests.post` con `unittest.mock`, por lo que no necesitan token ni conexión real.
+Los fallos propios del cliente se exponen como `DatabricksEndpointError`, salvo el `TypeError` explícito de `predecir_dataframe` para entradas que no son DataFrames.
+
+| Error | Causa probable | Qué revisar |
+|---|---|---|
+| Variables faltantes | Entorno incompleto | Las tres variables y la sesión de PowerShell. |
+| 400 | Payload o firma incompatible | Nombres, orden, cantidad y tipos de columnas. |
+| 401 | Token inválido o expirado | Token, host y origen de la credencial. |
+| 403 | Falta autorización | Permiso `CAN_QUERY` de la identidad. |
+| 404 | Host o endpoint incorrecto | Workspace, nombre exacto y URL generada. |
+| 429 | Límite de frecuencia o cuota | Volumen y política de reintentos de la aplicación. |
+| 500 | Error interno | Logs del endpoint y estado del modelo. |
+| 503 | Servicio iniciando o no disponible | Estado del endpoint y scale-to-zero. |
+| Timeout | Respuesta mayor a 60 segundos | Arranque en frío, lote y latencia. |
+| JSON sin `predictions` | Contrato diferente | Respuesta real y versión del modelo. |
+| Predicciones incompletas | Filas descartadas o agregadas | Logs y correspondencia fila-predicción. |
+
+El cliente no reintenta automáticamente. Si se necesitan reintentos, deben vivir en la aplicación con backoff, límite de intentos, observabilidad y una decisión explícita sobre si la operación es segura de repetir.
+
+## Pruebas y calidad
+
+Las pruebas no llaman a Databricks: sustituyen `requests.post` con mocks y configuran variables de entorno temporales. Se pueden ejecutar sin token, red ni endpoint activo:
 
 ```powershell
 uv run pytest
-```
-
-Las pruebas cubren respuestas exitosas, errores HTTP 401, 403, 404, 429 y 503, timeout, JSON inválido, respuesta sin `predictions`, cantidad incorrecta de predicciones y variables faltantes.
-
-## Ruff y Mypy
-
-```powershell
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
 ```
 
-## Formato enviado
+La suite cubre payload y URL exitosos, variables faltantes, errores HTTP, JSON sin `predictions`, no mutación del DataFrame y cantidad incorrecta de predicciones. Toda nueva rama de errores debe incluir una prueba que documente el contrato esperado.
 
-El cliente envía JSON con esta estructura:
+## Prueba manual contra Databricks
 
-```json
-{
-  "dataframe_split": {
-    "columns": ["columna_1", "columna_2"],
-    "data": [["valor_1", "valor_2"]]
-  }
-}
+Con las variables configuradas, ejecuta desde `tools`:
+
+```powershell
+uv run python .\src\databricks_endpoint_client\client.py
 ```
 
-Los headers enviados son:
+También puedes importar [`../test_endpoint.ipynb`](../test_endpoint.ipynb) en Databricks. El notebook obtiene el token desde Databricks Secrets y no lo imprime. Completa los widgets `DATABRICKS_HOST`, `DATABRICKS_ENDPOINT_NAME`, `DATABRICKS_SECRET_SCOPE` y `DATABRICKS_SECRET_KEY`.
+
+La firma Iris documentada originalmente usa cuatro columnas numéricas:
 
 ```python
-{
-    "Authorization": "Bearer <token>",
-    "Content-Type": "application/json",
-}
+["SepalLengthCm", "SepalWidthCm", "PetalLengthCm", "PetalWidthCm"]
 ```
 
-El timeout es de 60 segundos.
+Antes de una ejecución real, confirma que el endpoint exista, que el modelo activo conserve esa firma y que la identidad tenga `CAN_QUERY`. Los nombres, estados y permisos de un workspace pueden cambiar.
 
-## Errores frecuentes de Databricks
+## Límites conocidos
 
-- **400**: el JSON no coincide con la firma del modelo, faltan columnas, el orden es incorrecto o hay tipos incompatibles.
-- **401**: el token falta, expiró, es incorrecto o se configuró en otra sesión de PowerShell.
-- **403**: el token funciona, pero su identidad no tiene permiso para invocar el endpoint.
-- **404**: el host, el nombre del endpoint o la ruta del workspace son incorrectos.
-- **429**: Databricks aplicó un límite de frecuencia o el endpoint está recibiendo demasiadas solicitudes. Implementa reintentos con backoff si tu aplicación lo necesita.
-- **500**: el servicio encontró un error interno; revisa los logs del endpoint y su modelo.
-- **503**: el endpoint está iniciando, no está disponible o no tiene capacidad. Espera y vuelve a intentar según la política de tu aplicación.
-- **Timeout**: la respuesta tardó más de 60 segundos; revisa la carga, el tamaño del lote y el estado del endpoint.
-- **JSON sin `predictions`**: la respuesta del endpoint usa otro formato o contiene un error estructurado distinto al esperado. Revisa la firma y la documentación del modelo.
+- No crea ni actualiza endpoints.
+- No registra métricas ni runs en MLflow.
+- No descubre automáticamente la firma del modelo.
+- No convierte etiquetas, probabilidades ni formatos de respuesta alternativos.
+- No implementa reintentos, circuit breaker ni rate limiting.
+- Usa un timeout fijo de 60 segundos.
 
-Todos los errores generados por el cliente incluyen, cuando existe, el código HTTP, el texto devuelto por Databricks y una causa probable. El token no se incluye en esos mensajes.
+Estas decisiones mantienen la librería predecible. Si el proyecto necesita producción, conviene añadir esas capacidades en una capa de servicio con requisitos, métricas y pruebas de integración separados.
+
+## Hooks de Git
+
+Los hooks de Git son scripts locales que se ejecutan automáticamente en puntos
+concretos del flujo de trabajo. Actualmente este repositorio no tiene hooks
+activos; la carpeta `.git/hooks` fue limpiada de los archivos de ejemplo de Git.
+
+La propuesta para el cliente es:
+
+### `pre-commit`
+
+Se ejecuta antes de crear un commit y debe permanecer rápido. Comprueba lint y
+formato sin hacer llamadas externas:
+
+```powershell
+uv run ruff check .
+uv run ruff format --check .
+```
+
+Si se prefiere que el hook corrija automáticamente el formato, puede usar:
+
+```powershell
+uv run ruff check . --fix
+uv run ruff format .
+```
+
+Después de una corrección automática conviene revisar `git diff` antes de
+confirmar el commit.
+
+### `pre-push`
+
+Se ejecuta antes de enviar commits al remoto. Como las pruebas pueden tardar
+más que Ruff, aquí se ejecutan Pytest y Mypy:
+
+```powershell
+uv run pytest
+uv run mypy
+```
+
+Si cualquiera falla, Git cancela el push. El commit local no se elimina: se
+corrige el problema y se vuelve a intentar.
+
+### GitHub Actions
+
+El workflow en [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) repite
+Ruff, formato, Pytest y Mypy en cada Pull Request hacia `main`. Esa repetición
+es necesaria porque los hooks son locales, pueden no estar instalados y pueden
+omitirse con `--no-verify`; GitHub Actions es el control centralizado que debe
+proteger la rama principal.
+
+```text
+commit local ──► pre-commit: Ruff
+push local   ──► pre-push: Pytest + Mypy
+Pull Request ──► GitHub Actions: todas las validaciones
+```
