@@ -13,7 +13,7 @@ El token nunca se escribe en el código ni se imprime en los mensajes de error.
 
 ## Crear el entorno con uv
 
-Desde la carpeta `databricks_endpoint_client`:
+Desde la carpeta `tools`:
 
 ```powershell
 uv venv --python 3.12
