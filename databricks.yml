@@ -6,4 +6,4 @@ targets:
     default: true
     mode: development
     workspace:
-      profile: DEFAULT
+      profile: dev
