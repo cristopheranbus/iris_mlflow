@@ -50,10 +50,10 @@ El ejemplo ejecutable envía estas cuatro columnas y tres observaciones Iris:
 
 ```python
 columnas = [
-    "sepal length (cm)",
-    "sepal width (cm)",
-    "petal length (cm)",
-    "petal width (cm)",
+    "SepalLengthCm",
+    "SepalWidthCm",
+    "PetalLengthCm",
+    "PetalWidthCm",
 ]
 ```
 
@@ -70,6 +70,27 @@ El notebook [`notebooks/probar_endpoint_databricks.ipynb`](notebooks/probar_endp
 5. Revisa el código HTTP, las predicciones y el DataFrame final.
 
 El notebook nunca imprime el token. El host se normaliza y la URL final queda como `https://<workspace>/serving-endpoints/<endpoint-name>/invocations`. Si el modelo usa otras columnas, cambia únicamente las listas `columnas` y `datos` por valores que coincidan con la firma del endpoint.
+
+### Valores confirmados para el endpoint Iris
+
+Para el endpoint actual, usa estos valores:
+
+```text
+DATABRICKS_HOST=https://dbc-f2dbc696-258a.cloud.databricks.com
+DATABRICKS_ENDPOINT_NAME=iris-random-forest
+```
+
+El endpoint está en estado `READY`, usa el modelo `iris_random_forest-1` y tiene scale-to-zero. La primera invocación puede tardar aproximadamente entre 15 y 30 segundos mientras el servicio inicia; el notebook utiliza un timeout de 60 segundos.
+
+El token debe pertenecer a una identidad con permiso `CAN_QUERY` sobre el endpoint. Los nombres `DATABRICKS_SECRET_SCOPE` y `DATABRICKS_SECRET_KEY` deben completarse con los valores reales del workspace.
+
+La firma de entrada confirmada es:
+
+```python
+["SepalLengthCm", "SepalWidthCm", "PetalLengthCm", "PetalWidthCm"]
+```
+
+Las cuatro columnas deben enviarse como valores numéricos `double`/`float64`. El endpoint no espera `Id` ni `Species`.
 
 ## Usar el cliente desde otro módulo
 
