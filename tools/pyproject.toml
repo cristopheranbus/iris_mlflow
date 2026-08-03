@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "databricks-endpoint-client"
+version = "0.1.0"
+description = "Cliente REST para consumir endpoints de Databricks Model Serving."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2",
+    "requests>=2.32",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11",
+    "pandas-stubs>=2.2",
+    "pytest>=8.3",
+    "ruff>=0.6",
+    "types-requests>=2.32",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/databricks_endpoint_client"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+strict = true
+plugins = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
