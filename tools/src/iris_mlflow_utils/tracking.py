@@ -8,11 +8,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+import logging
+
 import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
 import mlflow.xgboost
 from mlflow.models import infer_signature
+
+# CommandContext.extraContext() is not whitelisted on Databricks Serverless;
+# MLflow's context registry warns on every run — suppress at WARNING level.
+logging.getLogger("mlflow.tracking.context.registry").setLevel(logging.ERROR)
 
 from .config import TrainingConfig
 from .data import SplitBundle
@@ -121,7 +127,7 @@ def log_training_run(
         flavor = mlflow.xgboost if model_type == "XGBoost" else mlflow.sklearn
         model_info = flavor.log_model(
             model,
-            artifact_path="model",
+            name="model",
             signature=signature,
             input_example=split.x_train.head(5),
             registered_model_name=config.registered_model_name,
