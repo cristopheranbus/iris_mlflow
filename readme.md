@@ -178,10 +178,11 @@ datos, el split, las métricas y el tracking.
 
 - `build_config`: configuración local o Databricks.
 - `load_dataset`: validación, features, etiquetas y mapping.
-- `split_dataset`: split estratificado reproducible.
+- `train_test_split`: se usa directamente desde scikit-learn en ambos notebooks.
 - `evaluate_model`: métricas y diagnósticos de una partición.
 - `evaluate_train_test`: evaluación uniforme train/test.
-- `log_training_run`: tracking, artefactos y registro del modelo.
+- `build_metrics_summary_table` y `build_classification_table`: preparan tablas
+  para registrarlas directamente con `mlflow.log_table`.
 
 ## Serving y seguridad
 
@@ -234,3 +235,38 @@ Conserva dataset, código, dependencias, semilla, split, hiperparámetros y
 `run_id`. Comparar métricas exige que esos elementos sean compatibles. Un run de
 MLflow es la evidencia del entrenamiento y no debe confundirse con el endpoint
 que eventualmente sirva el modelo.
+
+## MLflow 3 en Databricks
+
+Los notebooks usan `mlflow[databricks]>=3.1,<4` y el tracking server
+administrado por Databricks. En un notebook Databricks se instala el paquete y
+se reinicia Python antes de importar las utilidades:
+
+```python
+%pip install -e ./tools "mlflow[databricks]>=3.1,<4"
+dbutils.library.restartPython()
+```
+
+La URI de tracking se deja en la configuración nativa de Databricks salvo que
+`MLFLOW_TRACKING_URI` se defina explícitamente. El registry permanece en
+`databricks-uc` y los modelos usan nombres completos de Unity Catalog.
+
+Cada run produce tracking tradicional y tracing de las etapas principales. Los
+traces se pueden revisar desde la pestaña de traces del experimento. Los inputs
+y outputs completos del dataset no se envían al trace; solo se registran
+metadatos técnicos y resúmenes.
+
+La evaluación usa `mlflow.models.evaluate` y deja estas tablas en el run:
+
+```text
+evaluation/metrics_summary.json
+evaluation/classification_by_class.json
+```
+
+También se registran `classification_report.json` y
+`confusion_matrix.png`. La URI utilizada para verificar el modelo es la URI
+retornada por `log_model`; no se reconstruye manualmente como `runs:/...`.
+
+Para registrar modelos en Unity Catalog se necesitan `USE CATALOG`, `USE
+SCHEMA` y `CREATE MODEL`. Para cargar una versión registrada se necesita
+`EXECUTE` sobre el modelo.

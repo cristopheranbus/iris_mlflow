@@ -1,104 +1,72 @@
 # Herramientas reutilizables
 
-Este proyecto Python contiene dos componentes separados:
+`iris_mlflow_utils` contiene únicamente configuración, carga/validación de
+datos, métricas auxiliares y constructores de DataFrames para evaluación. El
+cliente `databricks_endpoint_client` permanece separado y solo consume
+endpoints de Model Serving.
+
+## Estructura
 
 ```text
-tools/src/iris_mlflow_utils/
-    config.py       configuración local/Databricks
-    data.py         carga, validación y split
-    evaluation.py   métricas y diagnósticos
-    tracking.py     tracking MLflow y Unity Catalog
-
-tools/src/databricks_endpoint_client/
-    client.py       cliente REST para Model Serving
+src/iris_mlflow_utils/
+    __init__.py
+    config.py
+    data.py
+    evaluation.py
+src/databricks_endpoint_client/
+    client.py
+tests/
 ```
 
-`iris_mlflow_utils` es usado por `random_forest.ipynb` y `xgboost.ipynb`.
-`databricks_endpoint_client` no entrena ni registra modelos: solo consulta un
-endpoint ya publicado.
+## Uso en notebooks
 
-## Instalación
-
-Se requiere Python 3.12 o superior y `uv`:
-
-```powershell
-uv venv --python 3.12
-uv sync --dev
-```
-
-Las dependencias incluyen pandas, numpy, scikit-learn, matplotlib, MLflow,
-XGBoost y requests. `uv.lock` fija las versiones resueltas.
-
-Los notebooks instalan este proyecto en modo editable con:
+El split usa directamente la API oficial de scikit-learn:
 
 ```python
-%pip install -e ./tools
+from sklearn.model_selection import train_test_split
+
+x_train, x_test, y_train, y_test = train_test_split(
+    dataset.features,
+    dataset.target,
+    test_size=config.test_size,
+    random_state=config.random_state,
+    stratify=dataset.target,
+)
 ```
 
-En Databricks, ejecuta esa celda antes de los imports porque `%pip` puede
-reiniciar Python.
+El tracking y el tracing también quedan visibles en cada notebook mediante
+`mlflow.start_run`, `mlflow.start_span`, `mlflow.log_params`,
+`mlflow.log_metrics` y `mlflow.log_table`. La evaluación usa
+`mlflow.models.evaluate`, y el registro usa `mlflow.sklearn.log_model` o
+`mlflow.xgboost.log_model`.
 
-## API de entrenamiento
+`load_dataset` valida columnas, nulos, tipos numéricos, clases y excluye `Id`.
+`evaluate_model` produce métricas, reporte y matriz de confusión para una
+partición. `evaluate_train_test` aplica el mismo contrato a train y test.
+`build_metrics_summary_table` y `build_classification_table` solo transforman
+resultados a DataFrames; las tablas se guardan con `mlflow.log_table` desde el
+notebook.
 
-### Configuración
+## Databricks y MLflow 3
 
-`build_config` devuelve un `TrainingConfig` inmutable. Lee variables de entorno,
-widgets de Databricks y valores predeterminados en ese orden.
-
-### Datos
-
-`load_dataset(path)` valida el archivo, exige un objetivo con al menos dos
-clases, rechaza nulos y features no numéricas, excluye `Id` y codifica las
-clases. Devuelve un `DatasetBundle` con dataframe, features, target, columnas y
-mapping de clases.
-
-`split_dataset(bundle, test_size, random_state)` realiza un split estratificado
-y reproducible, preservando los nombres de columnas.
-
-### Evaluación
-
-`evaluate_model` devuelve accuracy, precision, recall, F1 weighted, reporte por
-clase, matriz de confusión y predicciones. `evaluate_train_test` aplica el mismo
-contrato a train y test para que los notebooks sean comparables.
-
-### MLflow
-
-`log_training_run` configura tracking y registry, reutiliza o crea el
-experimento, abre un run, registra parámetros, tags, métricas, reportes, mapping
-de clases, matriz de confusión, signature, input example y modelo.
-
-El parámetro `model_type` debe ser `RandomForest` o `XGBoost`; determina el
-flavor de MLflow usado para serializar el estimador.
-
-## Contrato de datos
-
-El dataset necesita `Species`, una columna opcional `Id` y al menos una feature
-numérica. El dataset Iris habitual utiliza:
-
-```text
-SepalLengthCm, SepalWidthCm, PetalLengthCm, PetalWidthCm
+```python
+%pip install -e ./tools "mlflow[databricks]>=3.1,<4"
+dbutils.library.restartPython()
 ```
 
-Las clases se convierten a índices enteros desde cero. El mapping se registra
-como `class_mapping.json` para que serving pueda traducir la predicción.
+La celda de reinicio es exclusiva de Databricks. El tracking usa el servidor
+administrado del workspace salvo que `MLFLOW_TRACKING_URI` se configure
+explícitamente. Unity Catalog se configura con `databricks-uc` y nombres de
+modelo de tres niveles.
 
-## Cliente REST
-
-El cliente requiere:
-
-```text
-DATABRICKS_HOST
-DATABRICKS_TOKEN
-DATABRICKS_ENDPOINT_NAME
-```
-
-Envía `dataframe_split` y espera `{"predictions": [...]}`. Valida configuración,
-URL, tamaño de filas, códigos HTTP y cuerpo JSON. No implementa reintentos
-automáticos: esa política pertenece a la aplicación consumidora.
+Los notebooks conservan `model_info.model_uri`, `model_info.model_id` y
+`model_info.registered_model_version` retornados por MLflow 3. Esa URI oficial
+se utiliza para cargar el modelo; nunca se reconstruye manualmente desde el
+`run_id`.
 
 ## Calidad
 
-Ejecuta desde esta carpeta:
+Desde esta carpeta:
 
 ```powershell
 uv run pytest
@@ -107,12 +75,11 @@ uv run ruff format --check .
 uv run mypy
 ```
 
-Las pruebas de entrenamiento usan un CSV temporal y un modelo pequeño. Las
-pruebas REST reemplazan la red con mocks; ninguna requiere token, endpoint ni
-workspace real.
+Las pruebas son locales y no validan permisos, traces ni registro en un
+workspace Databricks real. Esa validación requiere ejecutar los notebooks en
+un cluster con acceso al experimento y Unity Catalog.
 
 ## Seguridad
 
-No guardes tokens en archivos, notebooks, README, historial de shell ni Git.
-Usa Databricks Secrets o el gestor de credenciales del entorno. Los errores del
-cliente no incluyen intencionalmente el token.
+No guardes tokens ni secretos en código, notebooks, README o Git. Usa
+Databricks Secrets o el gestor de credenciales del entorno.

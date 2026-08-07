@@ -67,6 +67,7 @@ class TrainingConfig:
     test_size: float = 0.20
     random_state: int = 42
     primary_metric: str = "test_f1_weighted"
+    enable_tracing: bool = True
 
     def __post_init__(self) -> None:
         if not 0 < self.test_size < 1:
@@ -99,9 +100,7 @@ def build_config(
         artifact_location=get_setting(
             "IRIS_ARTIFACT_LOCATION", "", "Ubicación de artefactos (opcional)"
         ),
-        tracking_uri=get_setting(
-            "MLFLOW_TRACKING_URI", "databricks" if databricks else "", "Tracking URI"
-        ),
+        tracking_uri=get_setting("MLFLOW_TRACKING_URI", "", "Tracking URI"),
         registry_uri=get_setting("MLFLOW_REGISTRY_URI", "databricks-uc", "Registry URI"),
         registered_model_name=get_setting(
             f"IRIS_{model_slug.upper()}_REGISTERED_MODEL",
@@ -116,5 +115,7 @@ def build_config(
         test_size=float(get_setting("IRIS_TEST_SIZE", "0.20", "Proporción de prueba")),
         random_state=int(get_setting("IRIS_RANDOM_STATE", "42", "Semilla")),
         primary_metric=get_setting("IRIS_PRIMARY_METRIC", "test_f1_weighted", "Métrica principal"),
+        enable_tracing=get_setting("MLFLOW_ENABLE_TRACING", "true", "Activar tracing").lower()
+        in {"1", "true", "yes", "si", "sí"},
     )
     return config

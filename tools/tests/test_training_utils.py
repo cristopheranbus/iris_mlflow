@@ -5,9 +5,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from mlflow.models import evaluate
+from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
 from sklearn.tree import DecisionTreeClassifier  # type: ignore[import-untyped]
 
-from iris_mlflow_utils import evaluate_model, load_dataset, split_dataset
+from iris_mlflow_utils import (
+    build_classification_table,
+    build_metrics_summary_table,
+    evaluate_model,
+    load_dataset,
+)
 
 
 def iris_csv(tmp_path: Path) -> Path:
@@ -47,13 +54,25 @@ def test_load_dataset_rejects_missing_target(tmp_path: Path) -> None:
         load_dataset(path)
 
 
-def test_split_dataset_is_reproducible(tmp_path: Path) -> None:
+def test_official_train_test_split_is_reproducible(tmp_path: Path) -> None:
     bundle = load_dataset(iris_csv(tmp_path))
-    first = split_dataset(bundle, test_size=0.50, random_state=42)
-    second = split_dataset(bundle, test_size=0.50, random_state=42)
+    first = train_test_split(
+        bundle.features,
+        bundle.target,
+        test_size=0.50,
+        random_state=42,
+        stratify=bundle.target,
+    )
+    second = train_test_split(
+        bundle.features,
+        bundle.target,
+        test_size=0.50,
+        random_state=42,
+        stratify=bundle.target,
+    )
 
-    pd.testing.assert_frame_equal(first.x_train, second.x_train)
-    np.testing.assert_array_equal(first.y_test, second.y_test)
+    pd.testing.assert_frame_equal(first[0], second[0])
+    np.testing.assert_array_equal(first[3], second[3])
 
 
 def test_evaluate_model_returns_uniform_metrics() -> None:
@@ -71,3 +90,44 @@ def test_evaluate_model_returns_uniform_metrics() -> None:
     }
     assert result.metrics["accuracy"] == 1.0
     assert result.confusion_matrix.shape == (2, 2)
+
+
+def test_evaluation_tables_have_stable_columns() -> None:
+    features = pd.DataFrame({"feature": [0.0, 0.1, 1.0, 1.1]})
+    target = np.array([0, 0, 1, 1])
+    model = DecisionTreeClassifier(random_state=42).fit(features, target)
+    result = evaluate_model(model, features, target, labels=[0, 1])
+    evaluations = {"test": result}
+
+    metrics_table = build_metrics_summary_table(
+        evaluations,
+        model_type="RandomForest",
+        dataset_version="test",
+        project_version="test",
+    )
+    classes_table = build_classification_table(
+        evaluations,
+        ("setosa", "versicolor"),
+        model_type="RandomForest",
+        dataset_version="test",
+        project_version="test",
+    )
+
+    assert {"partition", "metric", "value"}.issubset(metrics_table.columns)
+    assert {"class_id", "class_name", "precision", "f1_score"}.issubset(classes_table.columns)
+
+
+def test_mlflow_evaluation_returns_metrics() -> None:
+    features = pd.DataFrame({"feature": [0.0, 0.1, 1.0, 1.1]})
+    target = np.array([0, 0, 1, 1])
+    model = DecisionTreeClassifier(random_state=42).fit(features, target)
+
+    result = evaluate(  # type: ignore[no-untyped-call]
+        model=model.predict,
+        data=features.assign(target=target),
+        targets="target",
+        model_type="classifier",
+        evaluator_config={"log_model_explainability": False},
+    )
+
+    assert "accuracy_score" in result.metrics
