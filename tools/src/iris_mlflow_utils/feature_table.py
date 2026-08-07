@@ -39,15 +39,17 @@ def ensure_feature_table(
     """
 
     _validate_table_name(table_name)
-    table_exists = spark.catalog.tableExists(table_name)
+    table_exists = spark.catalog.tableExists(table_name)  # Nombre UC catalog.schema.table.
     if table_exists:
-        feature_df = spark.table(table_name)
+        feature_df = spark.table(table_name)  # Lee la tabla validada sin modificarla.
         _validate_feature_dataframe(feature_df, table_name)
         _ensure_primary_key(spark, table_name)
         return False
 
     source_df = (
-        spark.read.option("header", True).option("inferSchema", False).csv(str(dataset_path))
+        spark.read.option("header", True)  # La primera fila contiene los nombres de columnas.
+        .option("inferSchema", False)  # Los tipos se fuerzan explícitamente después.
+        .csv(str(dataset_path))  # Ruta del CSV en el volumen Databricks.
     )
     missing = set(FEATURE_TABLE_COLUMNS) - set(source_df.columns)
     if missing:
@@ -64,7 +66,11 @@ def ensure_feature_table(
         source_df["Species"].cast("string").alias("Species"),
     )
     _validate_feature_dataframe(feature_df, table_name)
-    feature_df.write.format("delta").mode("errorifexists").saveAsTable(table_name)
+    (
+        feature_df.write.format("delta")  # Formato requerido para la tabla de features.
+        .mode("errorifexists")  # Evita sobrescribir una tabla creada en paralelo.
+        .saveAsTable(table_name)  # Nombre completo de la tabla en Unity Catalog.
+    )
     _ensure_primary_key(spark, table_name)
     return True
 
@@ -100,12 +106,21 @@ def _validate_feature_dataframe(dataframe: Any, table_name: str) -> None:
 
 
 def _ensure_primary_key(spark: Any, table_name: str) -> None:
-    ddl = "\n".join(row[0] for row in spark.sql(f"SHOW CREATE TABLE {table_name}").collect())
+    ddl = "\n".join(
+        row[0]
+        for row in spark.sql(  # Consulta DDL para verificar la clave primaria existente.
+            f"SHOW CREATE TABLE {table_name}"
+        ).collect()
+    )
     if "PRIMARY KEY" in ddl.upper():
         return
     try:
-        spark.sql(f"ALTER TABLE {table_name} ALTER COLUMN Id SET NOT NULL")
-        spark.sql(f"ALTER TABLE {table_name} ADD CONSTRAINT iris_features_pk PRIMARY KEY (Id)")
+        spark.sql(  # La clave debe ser no nula antes de declarar la PK.
+            f"ALTER TABLE {table_name} ALTER COLUMN Id SET NOT NULL"
+        )
+        spark.sql(  # Restricción informativa requerida por Feature Engineering en UC.
+            f"ALTER TABLE {table_name} ADD CONSTRAINT iris_features_pk PRIMARY KEY (Id)"
+        )
     except Exception as error:
         raise RuntimeError(
             f"La tabla {table_name} no tiene una clave primaria sobre Id y "

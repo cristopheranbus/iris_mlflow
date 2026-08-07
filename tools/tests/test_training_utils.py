@@ -17,6 +17,7 @@ from iris_mlflow_utils import (
     load_dataset,
     load_dataset_frame,
 )
+from iris_mlflow_utils.config import TrainingConfig, build_config
 
 
 def iris_csv(tmp_path: Path) -> Path:
@@ -151,7 +152,49 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
         source = "\n".join(
             "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
         )
-        assert 'FEATURE_TABLE = "workspace.default.iris_features"' in source
+        assert "FEATURE_TABLE = config.feature_table" in source
         assert "ensure_feature_table" in source
         assert "spark.table(FEATURE_TABLE)" in source
         assert 'registered_model_name="workspace.default.iris_classifier"' in source
+        assert "config.challenger_alias" in source
+        assert "set_registered_model_alias" in source
+        assert "mlflow.register_model" in source
+        assert "feature_table_source" in source
+
+
+def test_build_config_exposes_mlflow_and_serving_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier")
+    config = build_config(
+        model_slug="random_forest",
+        registered_model_name="workspace.default.fallback",
+        run_name="test-run",
+    )
+
+    assert isinstance(config, TrainingConfig)
+    assert config.feature_table == "workspace.default.iris_features"
+    assert config.champion_alias == "Champion"
+    assert config.challenger_alias == "Challenger"
+    assert config.model_input_example_rows == 5
+    assert config.serving_traffic_percentage == 100
+
+
+def test_training_config_rejects_invalid_model_name() -> None:
+    with pytest.raises(ValueError, match="catalog.schema.model"):
+        TrainingConfig(
+            dataset_path=Path("Iris.csv"),
+            experiment_name="iris_mlflow",
+            artifact_location="",
+            tracking_uri="",
+            registry_uri="databricks-uc",
+            registered_model_name="invalid-model",
+            feature_table="workspace.default.iris_features",
+            champion_alias="Champion",
+            challenger_alias="Challenger",
+            run_name="test-run",
+            dataset_version="test",
+            project_version="test",
+            author="test",
+            purpose="test",
+        )

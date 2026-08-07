@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,9 @@ class TrainingConfig:
     tracking_uri: str
     registry_uri: str
     registered_model_name: str
+    feature_table: str
+    champion_alias: str
+    challenger_alias: str
     run_name: str
     dataset_version: str
     project_version: str
@@ -68,12 +72,40 @@ class TrainingConfig:
     random_state: int = 42
     primary_metric: str = "test_f1_weighted"
     enable_tracing: bool = True
+    model_input_example_rows: int = 5
+    serving_endpoint_name: str = ""
+    served_entity_name: str = "iris-classifier"
+    serving_traffic_percentage: int = 100
+    target_column: str = "Species"
+    model_registration_timeout_seconds: int = 300
+    model_registration_poll_seconds: int = 5
 
     def __post_init__(self) -> None:
         if not 0 < self.test_size < 1:
             raise ValueError("test_size debe estar entre 0 y 1.")
         if self.primary_metric not in {"test_accuracy", "test_f1_weighted"}:
             raise ValueError("primary_metric no está soportada.")
+
+        if not re.fullmatch(
+            r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+",
+            self.registered_model_name,
+        ):
+            raise ValueError("registered_model_name debe usar catalog.schema.model.")
+        if not re.fullmatch(
+            r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+",
+            self.feature_table,
+        ):
+            raise ValueError("feature_table debe usar catalog.schema.table.")
+        if not self.champion_alias or not self.challenger_alias:
+            raise ValueError("Los aliases Champion y Challenger no pueden estar vacíos.")
+        if self.model_input_example_rows < 1:
+            raise ValueError("model_input_example_rows debe ser positivo.")
+        if not 0 <= self.serving_traffic_percentage <= 100:
+            raise ValueError("serving_traffic_percentage debe estar entre 0 y 100.")
+        if self.model_registration_timeout_seconds < 1:
+            raise ValueError("model_registration_timeout_seconds debe ser positivo.")
+        if self.model_registration_poll_seconds < 1:
+            raise ValueError("model_registration_poll_seconds debe ser positivo.")
 
 
 def build_config(
@@ -103,9 +135,24 @@ def build_config(
         tracking_uri=get_setting("MLFLOW_TRACKING_URI", "", "Tracking URI"),
         registry_uri=get_setting("MLFLOW_REGISTRY_URI", "databricks-uc", "Registry URI"),
         registered_model_name=get_setting(
-            f"IRIS_{model_slug.upper()}_REGISTERED_MODEL",
+            "IRIS_REGISTERED_MODEL_NAME",
             registered_model_name,
-            "Modelo registrado",
+            "Modelo UC en formato catalog.schema.model",
+        ),
+        feature_table=get_setting(
+            "IRIS_FEATURE_TABLE",
+            "workspace.default.iris_features",
+            "Tabla Delta UC en formato catalog.schema.table",
+        ),
+        champion_alias=get_setting(
+            "IRIS_CHAMPION_ALIAS",
+            "Champion",
+            "Alias de la versión productiva",
+        ),
+        challenger_alias=get_setting(
+            "IRIS_CHALLENGER_ALIAS",
+            "Challenger",
+            "Alias de la versión candidata",
         ),
         run_name=get_setting("IRIS_RUN_NAME", run_name, "Nombre del run"),
         dataset_version=get_setting("IRIS_DATASET_VERSION", "iris-csv", "Versión del dataset"),
@@ -117,5 +164,44 @@ def build_config(
         primary_metric=get_setting("IRIS_PRIMARY_METRIC", "test_f1_weighted", "Métrica principal"),
         enable_tracing=get_setting("MLFLOW_ENABLE_TRACING", "true", "Activar tracing").lower()
         in {"1", "true", "yes", "si", "sí"},
+        model_input_example_rows=int(
+            get_setting("IRIS_MODEL_INPUT_EXAMPLE_ROWS", "5", "Filas del input example")
+        ),
+        serving_endpoint_name=get_setting(
+            "DATABRICKS_SERVING_ENDPOINT_NAME",
+            "",
+            "Endpoint Databricks para despliegue opcional",
+        ),
+        served_entity_name=get_setting(
+            "DATABRICKS_SERVED_ENTITY_NAME",
+            "iris-classifier",
+            "Nombre interno de la entidad servida",
+        ),
+        serving_traffic_percentage=int(
+            get_setting(
+                "DATABRICKS_SERVING_TRAFFIC_PERCENTAGE",
+                "100",
+                "Porcentaje de tráfico",
+            )
+        ),
+        target_column=get_setting(
+            "IRIS_TARGET_COLUMN",
+            "Species",
+            "Columna objetivo del dataset",
+        ),
+        model_registration_timeout_seconds=int(
+            get_setting(
+                "MLFLOW_MODEL_REGISTRATION_TIMEOUT_SECONDS",
+                "300",
+                "Tiempo máximo de registro del modelo",
+            )
+        ),
+        model_registration_poll_seconds=int(
+            get_setting(
+                "MLFLOW_MODEL_REGISTRATION_POLL_SECONDS",
+                "5",
+                "Intervalo de consulta del registro",
+            )
+        ),
     )
     return config
