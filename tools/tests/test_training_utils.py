@@ -1,5 +1,6 @@
 """Unit tests for the reusable notebook training helpers."""
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,7 @@ from iris_mlflow_utils import (
     build_metrics_summary_table,
     evaluate_model,
     load_dataset,
+    load_dataset_frame,
 )
 
 
@@ -52,6 +54,15 @@ def test_load_dataset_rejects_missing_target(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="columna objetivo"):
         load_dataset(path)
+
+
+def test_load_dataset_frame_matches_file_loader(tmp_path: Path) -> None:
+    path = iris_csv(tmp_path)
+    from_file = load_dataset(path)
+    from_frame = load_dataset_frame(pd.read_csv(path))
+
+    pd.testing.assert_frame_equal(from_file.features, from_frame.features)
+    np.testing.assert_array_equal(from_file.target, from_frame.target)
 
 
 def test_official_train_test_split_is_reproducible(tmp_path: Path) -> None:
@@ -131,3 +142,16 @@ def test_mlflow_evaluation_returns_metrics() -> None:
     )
 
     assert "accuracy_score" in result.metrics
+
+
+def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
+    repository_root = Path(__file__).parents[2]
+    for notebook_name in ("random_forest.ipynb", "xgboost.ipynb"):
+        notebook = json.loads((repository_root / notebook_name).read_text(encoding="utf-8"))
+        source = "\n".join(
+            "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
+        )
+        assert 'FEATURE_TABLE = "workspace.default.iris_features"' in source
+        assert "ensure_feature_table" in source
+        assert "spark.table(FEATURE_TABLE)" in source
+        assert 'registered_model_name="workspace.default.iris_classifier"' in source

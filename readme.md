@@ -43,6 +43,11 @@ Registrar un modelo no crea automáticamente un endpoint.
 El paquete de entrenamiento no comparte responsabilidades con el cliente REST:
 uno entrena y registra modelos; el otro solo consulta endpoints.
 
+Antes del entrenamiento, ambos notebooks validan o crean de forma idempotente
+la tabla Delta `workspace.default.iris_features` en Unity Catalog. Si existe,
+se verifica su esquema, clave `Id`, nulos y duplicados; si no existe, se crea
+desde el CSV sin sobrescribir tablas existentes.
+
 ## Dataset y contrato de entrada
 
 El CSV debe incluir `Species`, una columna opcional `Id` y columnas numéricas.

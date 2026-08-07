@@ -47,6 +47,10 @@ partición. `evaluate_train_test` aplica el mismo contrato a train y test.
 resultados a DataFrames; las tablas se guardan con `mlflow.log_table` desde el
 notebook.
 
+`ensure_feature_table` comprueba o crea una tabla Delta de Unity Catalog con
+clave primaria `Id`. Nunca sobrescribe una tabla existente y detiene el flujo
+si encuentra columnas faltantes, tipos incompatibles, nulos o claves duplicadas.
+
 ## Databricks y MLflow 3
 
 ```python
