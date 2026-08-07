@@ -275,3 +275,33 @@ retornada por `log_model`; no se reconstruye manualmente como `runs:/...`.
 Para registrar modelos en Unity Catalog se necesitan `USE CATALOG`, `USE
 SCHEMA` y `CREATE MODEL`. Para cargar una versión registrada se necesita
 `EXECUTE` sobre el modelo.
+
+## Parametrización y documentación de APIs
+
+Los notebooks reciben desde `TrainingConfig` los nombres de experimento,
+modelo, feature table, aliases, dataset, split, input example y configuración
+opcional de Serving. Los valores pueden llegar desde widgets Databricks o
+variables de entorno; no se escriben credenciales en el código.
+
+Parámetros principales:
+
+| Variable | Uso |
+|---|---|
+| `IRIS_REGISTERED_MODEL_NAME` | Modelo UC `catalog.schema.model`. |
+| `IRIS_FEATURE_TABLE` | Tabla Delta UC `catalog.schema.table`. |
+| `IRIS_CHAMPION_ALIAS` | Alias de la versión productiva. |
+| `IRIS_CHALLENGER_ALIAS` | Alias reasignado por cada entrenamiento. |
+| `MLFLOW_TRACKING_URI` | Tracking server opcional; vacío usa Databricks nativo. |
+| `MLFLOW_REGISTRY_URI` | Registry, por defecto `databricks-uc`. |
+| `IRIS_MODEL_INPUT_EXAMPLE_ROWS` | Filas usadas para documentar la firma. |
+| `DATABRICKS_SERVING_ENDPOINT_NAME` | Endpoint opcional de despliegue. |
+| `DATABRICKS_SERVED_ENTITY_NAME` | Nombre interno de la entidad servida. |
+| `DATABRICKS_SERVING_TRAFFIC_PERCENTAGE` | Tráfico configurado para Serving. |
+
+Cada llamada principal a MLflow, Spark y Unity Catalog incluye argumentos
+nombrados y comentarios cercanos que explican su propósito. El proceso registra
+cada nuevo modelo como `Challenger`, pero no modifica automáticamente
+`Champion` ni el endpoint productivo.
+
+Los secretos deben obtenerse desde Databricks Secrets o el entorno de ejecución.
+No se registran tokens en parámetros, tags, traces ni mensajes de error.

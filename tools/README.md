@@ -87,3 +87,21 @@ un cluster con acceso al experimento y Unity Catalog.
 
 No guardes tokens ni secretos en código, notebooks, README o Git. Usa
 Databricks Secrets o el gestor de credenciales del entorno.
+
+## Parámetros documentados
+
+`TrainingConfig` centraliza los valores que controlan MLflow, Unity Catalog,
+la feature table y el despliegue opcional. Los notebooks usan argumentos
+nombrados en las APIs y cada argumento no obvio tiene un comentario sobre su
+entrada, efecto y salida.
+
+La configuración incluye el modelo UC de tres niveles, la tabla Delta de
+features, `Champion`, `Challenger`, el experimento, tracking URI, registry URI,
+dataset, split, semilla, tamaño del input example y valores de Serving.
+Databricks widgets tienen prioridad después de las variables de entorno y los
+valores predeterminados se usan como último recurso.
+
+Cada entrenamiento mueve el alias configurable `Challenger` a la versión READY
+recién registrada y guarda tags de algoritmo, framework, dataset, etapa y
+training type. El alias `Champion` solo se consulta; la promoción y actualización
+de endpoints pertenecen a un flujo posterior de comparación/despliegue.
