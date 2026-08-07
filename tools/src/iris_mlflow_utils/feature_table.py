@@ -66,11 +66,20 @@ def ensure_feature_table(
         source_df["Species"].cast("string").alias("Species"),
     )
     _validate_feature_dataframe(feature_df, table_name)
-    (
-        feature_df.write.format("delta")  # Formato requerido para la tabla de features.
-        .mode("errorifexists")  # Evita sobrescribir una tabla creada en paralelo.
-        .saveAsTable(table_name)  # Nombre completo de la tabla en Unity Catalog.
-    )
+    try:
+        (
+            feature_df.write.format("delta")  # Formato requerido para la tabla de features.
+            .mode("error")  # Evita sobrescribir una tabla creada en paralelo.
+            .saveAsTable(table_name)  # Nombre completo de la tabla en Unity Catalog.
+        )
+    except Exception as exc:
+        if "TABLE_OR_VIEW_ALREADY_EXISTS" not in str(exc):
+            raise
+        # La tabla fue creada en paralelo; valida sin sobrescribir.
+        feature_df = spark.table(table_name)
+        _validate_feature_dataframe(feature_df, table_name)
+        _ensure_primary_key(spark, table_name)
+        return False
     _ensure_primary_key(spark, table_name)
     return True
 
