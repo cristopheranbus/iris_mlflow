@@ -7,7 +7,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
 from sklearn.preprocessing import LabelEncoder  # type: ignore[import-untyped]
 
 
@@ -22,16 +21,6 @@ class DatasetBundle:
     classes: tuple[str, ...]
     target_column: str
     id_column: str | None
-
-
-@dataclass(frozen=True)
-class SplitBundle:
-    """Train/test partitions with their original feature column names."""
-
-    x_train: pd.DataFrame
-    x_test: pd.DataFrame
-    y_train: np.ndarray
-    y_test: np.ndarray
 
 
 def load_dataset(
@@ -76,16 +65,3 @@ def load_dataset(
         target_column=target_column,
         id_column=id_column if id_column in dataframe.columns else None,
     )
-
-
-def split_dataset(bundle: DatasetBundle, test_size: float, random_state: int) -> SplitBundle:
-    """Create a stratified, reproducible train/test split."""
-
-    x_train, x_test, y_train, y_test = train_test_split(
-        bundle.features,
-        bundle.target,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=bundle.target,
-    )
-    return SplitBundle(x_train, x_test, y_train, y_test)
