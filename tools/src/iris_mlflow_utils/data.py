@@ -35,6 +35,22 @@ def load_dataset(
         raise FileNotFoundError(f"No existe el dataset en '{path}'.")
 
     dataframe = pd.read_csv(path)
+    return load_dataset_frame(
+        dataframe,
+        target_column=target_column,
+        id_column=id_column,
+    )
+
+
+def load_dataset_frame(
+    dataframe: pd.DataFrame,
+    *,
+    target_column: str = "Species",
+    id_column: str = "Id",
+) -> DatasetBundle:
+    """Validate a pandas dataset already loaded from a table or file."""
+
+    dataframe = dataframe.copy()
     if dataframe.empty:
         raise ValueError("El dataset está vacío.")
     if target_column not in dataframe.columns:
