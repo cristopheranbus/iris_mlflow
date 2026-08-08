@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "databricks-endpoint-client"
+name = "iris-mlflow-tools"
 version = "0.1.0"
-description = "Cliente REST para consumir endpoints de Databricks Model Serving."
+description = "Utilidades de entrenamiento y MLflow para el clasificador Iris."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -31,7 +31,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/databricks_endpoint_client", "src/iris_mlflow_utils"]
+packages = ["src/iris_mlflow_utils"]
 
 [tool.ruff]
 target-version = "py312"

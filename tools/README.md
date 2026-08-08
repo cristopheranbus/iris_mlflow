@@ -2,7 +2,7 @@
 
 `iris_mlflow_utils` contiene únicamente configuración, carga/validación de
 datos, métricas auxiliares y constructores de DataFrames para evaluación. El
-cliente `databricks_endpoint_client` permanece separado y solo consume
+cliente REST estÃ¡ documentado en `databricks_endpoint_client.ipynb` y solo consume
 endpoints de Model Serving.
 
 ## Estructura
@@ -13,8 +13,7 @@ src/iris_mlflow_utils/
     config.py
     data.py
     evaluation.py
-src/databricks_endpoint_client/
-    client.py
+databricks_endpoint_client.ipynb
 tests/
 ```
 

@@ -8,7 +8,7 @@ sus resultados con MLflow y preparar modelos para Databricks Model Serving.
 - `random_forest.ipynb`: baseline con `RandomForestClassifier`.
 - `xgboost.ipynb`: challenger con `XGBClassifier`.
 - `tools/src/iris_mlflow_utils`: carga, validación, evaluación y tracking común.
-- `tools/src/databricks_endpoint_client`: cliente REST separado para serving.
+- `tools/databricks_endpoint_client.ipynb`: cliente REST documentado para serving.
 - `test_endpoint.ipynb`: prueba manual de un endpoint ya publicado.
 
 ```text
@@ -36,12 +36,12 @@ Registrar un modelo no crea automáticamente un endpoint.
     ├── uv.lock
     ├── README.md
     ├── src/iris_mlflow_utils
-    ├── src/databricks_endpoint_client
+    ├── databricks_endpoint_client.ipynb
     └── tests
 ```
 
 El paquete de entrenamiento no comparte responsabilidades con el cliente REST:
-uno entrena y registra modelos; el otro solo consulta endpoints.
+uno entrena y registra modelos; el notebook separado solo consulta endpoints.
 
 Antes del entrenamiento, ambos notebooks validan o crean de forma idempotente
 la tabla Delta `workspace.default.iris_features` en Unity Catalog. Si existe,
@@ -133,15 +133,14 @@ Databricks y finalmente valores predeterminados.
 | `IRIS_RANDOM_STATE` | No | `42` | Semilla |
 | `IRIS_PRIMARY_METRIC` | No | `test_f1_weighted` | Métrica principal |
 
-Los modelos usan por defecto:
+Los notebooks comparten un único nombre configurable:
 
 ```text
-workspace.default.iris_random_forest
-workspace.default.iris_xgboost
+workspace.default.iris_classifier
 ```
 
-Se pueden cambiar con `IRIS_RANDOM_FOREST_REGISTERED_MODEL` y
-`IRIS_XGBOOST_REGISTERED_MODEL`.
+El nombre común del modelo se configura únicamente con
+`IRIS_REGISTERED_MODEL_NAME` en formato `catalog.schema.model`.
 
 ## MLflow y Unity Catalog
 
@@ -294,9 +293,6 @@ Parámetros principales:
 | `MLFLOW_TRACKING_URI` | Tracking server opcional; vacío usa Databricks nativo. |
 | `MLFLOW_REGISTRY_URI` | Registry, por defecto `databricks-uc`. |
 | `IRIS_MODEL_INPUT_EXAMPLE_ROWS` | Filas usadas para documentar la firma. |
-| `DATABRICKS_SERVING_ENDPOINT_NAME` | Endpoint opcional de despliegue. |
-| `DATABRICKS_SERVED_ENTITY_NAME` | Nombre interno de la entidad servida. |
-| `DATABRICKS_SERVING_TRAFFIC_PERCENTAGE` | Tráfico configurado para Serving. |
 
 Cada llamada principal a MLflow, Spark y Unity Catalog incluye argumentos
 nombrados y comentarios cercanos que explican su propósito. El proceso registra
