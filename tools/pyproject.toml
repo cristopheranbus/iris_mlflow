@@ -36,17 +36,17 @@ packages = ["src/iris_mlflow_utils"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "../tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "../tests"]
 strict = true
 plugins = []
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["../tests"]
 addopts = "-ra"

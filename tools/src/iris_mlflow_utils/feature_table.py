@@ -6,22 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-FEATURE_TABLE_COLUMNS = (
-    "Id",
-    "SepalLengthCm",
-    "SepalWidthCm",
-    "PetalLengthCm",
-    "PetalWidthCm",
-    "Species",
-)
-FEATURE_TABLE_TYPES = {
-    "Id": "bigint",
-    "SepalLengthCm": "double",
-    "SepalWidthCm": "double",
-    "PetalLengthCm": "double",
-    "PetalWidthCm": "double",
-    "Species": "string",
-}
+from .constants import FEATURE_TABLE_COLUMNS, FEATURE_TABLE_TYPES
+
 _TABLE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+$")
 
 
@@ -108,6 +94,17 @@ def _validate_feature_dataframe(dataframe: Any, table_name: str) -> None:
 
     if dataframe.filter(dataframe["Id"].isNull()).limit(1).count():
         raise ValueError(f"La tabla {table_name} contiene Id nulo.")
+    numeric_columns = [
+        column for column in FEATURE_TABLE_COLUMNS if column not in {"Id", "Species"}
+    ]
+    if (
+        dataframe.filter(
+            " OR ".join(f"{column} IS NULL OR isnan({column})" for column in numeric_columns)
+        )
+        .limit(1)
+        .count()
+    ):
+        raise ValueError(f"La tabla {table_name} contiene features numéricas nulas o inválidas.")
     if dataframe.groupBy("Id").count().filter("count > 1").limit(1).count():
         raise ValueError(f"La tabla {table_name} contiene Id duplicado.")
     if dataframe.filter(dataframe["Species"].isNull()).limit(1).count():
