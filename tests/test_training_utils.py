@@ -146,7 +146,7 @@ def test_mlflow_evaluation_returns_metrics() -> None:
 
 
 def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
-    repository_root = Path(__file__).parents[2]
+    repository_root = Path(__file__).parents[1]
     for notebook_name in ("random_forest.ipynb", "xgboost.ipynb"):
         notebook = json.loads((repository_root / notebook_name).read_text(encoding="utf-8"))
         source = "\n".join(

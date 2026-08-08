@@ -14,7 +14,7 @@ src/iris_mlflow_utils/
     data.py
     evaluation.py
 databricks_endpoint_client.ipynb
-tests/
+../tests/
 ```
 
 ## Uso en notebooks
@@ -69,7 +69,7 @@ se utiliza para cargar el modelo; nunca se reconstruye manualmente desde el
 
 ## Calidad
 
-Desde esta carpeta:
+Desde esta carpeta (`tools`):
 
 ```powershell
 uv run pytest
@@ -78,7 +78,7 @@ uv run ruff format --check .
 uv run mypy
 ```
 
-Las pruebas son locales y no validan permisos, traces ni registro en un
+Las pruebas se encuentran en `../tests` y son locales; no validan permisos, traces ni registro en un
 workspace Databricks real. Esa validación requiere ejecutar los notebooks en
 un cluster con acceso al experimento y Unity Catalog.
 

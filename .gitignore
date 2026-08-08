@@ -1,5 +1,26 @@
 .databricks/
 
+# Local Python environments and generated caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.uv-cache/
+
+# Local MLflow tracking and generated reports
+mlruns/
+mlflow.db
+.coverage
+htmlcov/
+dist/
+
+# Local configuration and secrets
+.env
+*.env
+!.env.example
+
 # Python-generated files
 __pycache__/
 *.pyc

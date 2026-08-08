@@ -16,6 +16,14 @@ from .evaluation import (  # noqa: E402
     evaluate_train_test,
 )
 from .feature_table import ensure_feature_table  # noqa: E402
+from .serving import (  # noqa: E402
+    DatabricksEndpointError,
+    build_invocation_url,
+    extract_predictions,
+    predict,
+    predict_dataframe,
+    read_configuration,
+)
 
 __all__ = [
     "DatasetBundle",
@@ -27,6 +35,12 @@ __all__ = [
     "evaluate_model",
     "evaluate_train_test",
     "ensure_feature_table",
+    "DatabricksEndpointError",
+    "build_invocation_url",
+    "extract_predictions",
     "load_dataset",
     "load_dataset_frame",
+    "predict",
+    "predict_dataframe",
+    "read_configuration",
 ]

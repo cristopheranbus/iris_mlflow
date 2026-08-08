@@ -37,7 +37,7 @@ Registrar un modelo no crea automáticamente un endpoint.
     ├── README.md
     ├── src/iris_mlflow_utils
     ├── databricks_endpoint_client.ipynb
-    └── tests
+    └── tests (raíz del proyecto)
 ```
 
 El paquete de entrenamiento no comparte responsabilidades con el cliente REST:

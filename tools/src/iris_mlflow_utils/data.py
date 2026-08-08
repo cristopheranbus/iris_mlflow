@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder  # type: ignore[import-untyped]
 
+from .constants import FEATURE_COLUMNS
+
 
 @dataclass(frozen=True)
 class DatasetBundle:
@@ -66,9 +68,16 @@ def load_dataset_frame(
     ]
     if not feature_columns:
         raise ValueError("No se encontraron columnas predictoras.")
+    if tuple(feature_columns) != FEATURE_COLUMNS:
+        raise ValueError(
+            "Las columnas predictoras deben coincidir con el contrato Iris: "
+            f"{list(FEATURE_COLUMNS)}. Se encontraron: {feature_columns}."
+        )
     non_numeric = dataframe[feature_columns].select_dtypes(exclude=np.number).columns.tolist()
     if non_numeric:
         raise TypeError(f"Las columnas predictoras deben ser numéricas: {non_numeric}.")
+    if not np.isfinite(dataframe[feature_columns].to_numpy(dtype=float)).all():
+        raise ValueError("Las columnas predictoras no pueden contener valores infinitos.")
 
     encoder = LabelEncoder()
     target = encoder.fit_transform(dataframe[target_column].astype(str))
