@@ -57,6 +57,26 @@ def test_load_dataset_rejects_missing_target(tmp_path: Path) -> None:
         load_dataset(path)
 
 
+def test_load_dataset_rejects_duplicate_ids(tmp_path: Path) -> None:
+    path = iris_csv(tmp_path)
+    dataframe = pd.read_csv(path)
+    dataframe.loc[1, "Id"] = dataframe.loc[0, "Id"]
+    dataframe.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="duplicados"):
+        load_dataset(path)
+
+
+def test_load_dataset_rejects_infinite_features(tmp_path: Path) -> None:
+    path = iris_csv(tmp_path)
+    dataframe = pd.read_csv(path)
+    dataframe.loc[0, "SepalLengthCm"] = np.inf
+    dataframe.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="infinitos"):
+        load_dataset(path)
+
+
 def test_load_dataset_frame_matches_file_loader(tmp_path: Path) -> None:
     path = iris_csv(tmp_path)
     from_file = load_dataset(path)
@@ -153,13 +173,15 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
             "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
         )
         assert "FEATURE_TABLE = config.feature_table" in source
-        assert "ensure_feature_table" in source
-        assert "spark.table(FEATURE_TABLE)" in source
+        assert "load_dataset_from_spark" in source
+        assert "ensure_feature_table" not in source
+        assert "table_name=FEATURE_TABLE" in source
         assert "config.registered_model_name" in source
         assert "config.challenger_alias" in source
         assert "set_registered_model_alias" in source
         assert "mlflow.register_model" in source
         assert "feature_table_source" in source
+        assert "config/training.toml" in source
         assert "metadata/model_identity.json" in source
         assert "challenger_alias_status" in source
         assert "set_model_version_tag" in source
@@ -169,15 +191,24 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
             "application/vnd.databricks.v1+notebook", {}
         )
         widget_metadata = widget_metadata.get("widgets", {})
+        assert widget_metadata == {}
         widget_names = set(widget_metadata)
         assert "IRIS_RANDOM_FOREST_REGISTERED_MODEL" not in widget_names
         assert "IRIS_XGBOOST_REGISTERED_MODEL" not in widget_names
 
-        is_random_forest = notebook_name == "random_forest.ipynb"
-        expected_type = "RandomForestClassifier" if is_random_forest else "XGBClassifier"
-        expected_framework = "sklearn" if is_random_forest else "xgboost"
-        assert f'MODEL_TYPE = "{expected_type}"' in source
-        assert f'MODEL_FRAMEWORK = "{expected_framework}"' in source
+        assert "MODEL_TYPE = config.model_type" in source
+        assert "MODEL_FRAMEWORK = config.model_framework" in source
+
+
+def test_endpoint_notebook_uses_external_configuration_and_no_token_fallback() -> None:
+    repository_root = Path(__file__).parents[1]
+    notebook = json.loads((repository_root / "test_endpoint.ipynb").read_text(encoding="utf-8"))
+    source = "\n".join(
+        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
+    )
+    assert "load_file_config" in source
+    assert "dbutils.widgets" not in source
+    assert "apiToken()" not in source
 
 
 def test_build_config_exposes_training_parameters(
@@ -196,6 +227,10 @@ def test_build_config_exposes_training_parameters(
     assert config.challenger_alias == "Challenger"
     assert config.model_input_example_rows == 5
     assert config.registered_model_name == "workspace.default.iris_classifier"
+    assert config.model_type == "random_forest"
+    assert config.model_framework == "sklearn"
+    assert config.model_params["n_estimators"] == 100
+    assert config.feature_table_version == ""
 
 
 def test_training_config_rejects_invalid_model_name() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -23,6 +24,45 @@ class DatasetBundle:
     classes: tuple[str, ...]
     target_column: str
     id_column: str | None
+
+
+def load_dataset_from_spark(
+    spark: Any,
+    *,
+    table_name: str,
+    table_version: str = "",
+    target_column: str = "Species",
+    id_column: str = "Id",
+) -> DatasetBundle:
+    """Load the canonical dataset directly from a Unity Catalog Delta table.
+
+    The table is validated before conversion to pandas. ``table_version`` can
+    pin a Delta snapshot for reproducible training.
+    """
+
+    if not table_name or table_name.count(".") != 2:
+        raise ValueError("table_name debe usar catalog.schema.table.")
+    catalog = getattr(spark, "catalog", None)
+    if catalog is not None and not catalog.tableExists(table_name):
+        raise FileNotFoundError(f"No existe la tabla Delta '{table_name}'.")
+    reader = getattr(spark, "read", None)
+    if table_version:
+        if reader is None:
+            raise RuntimeError("La sesión Spark no expone spark.read para leer una versión Delta.")
+        spark_dataframe = reader.option("versionAsOf", int(table_version)).table(table_name)
+    else:
+        spark_dataframe = spark.table(table_name)
+    expected_columns = list(FEATURE_COLUMNS) + [target_column]
+    if id_column in getattr(spark_dataframe, "columns", []):
+        expected_columns.insert(0, id_column)
+    missing = [column for column in expected_columns if column not in spark_dataframe.columns]
+    if missing:
+        raise ValueError(f"La tabla '{table_name}' no contiene columnas: {missing}.")
+    return load_dataset_frame(
+        spark_dataframe.select(*expected_columns).toPandas(),
+        target_column=target_column,
+        id_column=id_column,
+    )
 
 
 def load_dataset(
@@ -62,6 +102,8 @@ def load_dataset_frame(
     if dataframe.isna().any().any():
         null_columns = dataframe.columns[dataframe.isna().any()].tolist()
         raise ValueError(f"Hay valores nulos en: {null_columns}.")
+    if id_column in dataframe.columns and dataframe[id_column].duplicated().any():
+        raise ValueError(f"La columna '{id_column}' contiene valores duplicados.")
 
     feature_columns = [
         column for column in dataframe.columns if column not in {id_column, target_column}
