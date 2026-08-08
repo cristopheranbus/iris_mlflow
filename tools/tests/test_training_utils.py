@@ -155,14 +155,32 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
         assert "FEATURE_TABLE = config.feature_table" in source
         assert "ensure_feature_table" in source
         assert "spark.table(FEATURE_TABLE)" in source
-        assert 'registered_model_name="workspace.default.iris_classifier"' in source
+        assert "config.registered_model_name" in source
         assert "config.challenger_alias" in source
         assert "set_registered_model_alias" in source
         assert "mlflow.register_model" in source
         assert "feature_table_source" in source
+        assert "metadata/model_identity.json" in source
+        assert "challenger_alias_status" in source
+        assert "set_model_version_tag" in source
+        assert "DATABRICKS_SERVING_ENDPOINT_NAME" not in source
+        assert "DATABRICKS_SERVING_TRAFFIC_PERCENTAGE" not in source
+        widget_metadata = notebook.get("metadata", {}).get(
+            "application/vnd.databricks.v1+notebook", {}
+        )
+        widget_metadata = widget_metadata.get("widgets", {})
+        widget_names = set(widget_metadata)
+        assert "IRIS_RANDOM_FOREST_REGISTERED_MODEL" not in widget_names
+        assert "IRIS_XGBOOST_REGISTERED_MODEL" not in widget_names
+
+        is_random_forest = notebook_name == "random_forest.ipynb"
+        expected_type = "RandomForestClassifier" if is_random_forest else "XGBClassifier"
+        expected_framework = "sklearn" if is_random_forest else "xgboost"
+        assert f'MODEL_TYPE = "{expected_type}"' in source
+        assert f'MODEL_FRAMEWORK = "{expected_framework}"' in source
 
 
-def test_build_config_exposes_mlflow_and_serving_parameters(
+def test_build_config_exposes_training_parameters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier")
@@ -177,7 +195,7 @@ def test_build_config_exposes_mlflow_and_serving_parameters(
     assert config.champion_alias == "Champion"
     assert config.challenger_alias == "Challenger"
     assert config.model_input_example_rows == 5
-    assert config.serving_traffic_percentage == 100
+    assert config.registered_model_name == "workspace.default.iris_classifier"
 
 
 def test_training_config_rejects_invalid_model_name() -> None:
