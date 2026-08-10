@@ -8,7 +8,8 @@
 4. Confirmar la nueva versión `Challenger` y sus tags.
 5. Revisar métricas y artefactos de `evaluation/`.
 6. Esperar el Deployment Job.
-7. Aprobar con `Approval_Check=Approved`.
+7. Usar el botón **Approve** en la versión del modelo; esto aplica
+   `Approval_Check=Approved`.
 8. Confirmar endpoint `iris-classifier` en estado `READY`.
 9. Confirmar alias `Champion` y Activity Log.
 
