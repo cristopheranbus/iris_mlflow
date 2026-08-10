@@ -75,6 +75,22 @@ def test_deployment_notebooks_keep_only_dynamic_job_inputs() -> None:
         assert notebook["metadata"]["application/vnd.databricks.v1+notebook"]["widgets"] == {}
 
 
+def test_deployment_job_uses_databricks_approval_task_name() -> None:
+    repository_root = Path(__file__).parents[1]
+    notebook = json.loads(
+        (repository_root / "deployment" / "create_deployment_job.ipynb").read_text(
+            encoding="utf-8"
+        )
+    )
+    source = "\n".join(
+        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
+    )
+
+    assert "'task_key': 'Approval_Check'" in source
+    assert "'task_key': 'approval_model'" not in source
+    assert "'depends_on': [{'task_key': 'Approval_Check'}]" in source
+
+
 def test_deployment_config_comes_from_versioned_toml() -> None:
     config = build_deployment_config()
 
