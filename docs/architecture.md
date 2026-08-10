@@ -1,16 +1,36 @@
 # Arquitectura
 
-Los notebooks son las interfaces de ejecución y se mantienen sin cambios.
-`tools/src/iris_mlflow_utils` contiene las utilidades reutilizables:
+El ciclo separa entrenamiento, evaluación, aprobación y despliegue. Los
+notebooks de entrenamiento registran versiones como `Challenger`; los
+notebooks de `deployment/` gestionan la promoción posterior.
 
-- `config.py`: configuración local y Databricks.
-- `constants.py`: contrato de columnas y tipos del dataset Iris.
-- `data.py`: carga, validación y codificación de etiquetas.
-- `config/training.toml`: parámetros comunes y específicos de cada modelo.
-- `evaluation.py`: métricas y tablas de evaluación.
-- `feature_table.py`: creación y validación idempotente en Unity Catalog.
-- `serving.py`: cliente REST testeable para Model Serving.
+```mermaid
+flowchart LR
+    A[Tabla Delta iris_features] --> B[Entrenamiento]
+    B --> C[Modelo UC Challenger]
+    C --> D[Deployment Job]
+    D --> E[Evaluación y artefactos]
+    E --> F{Gates de calidad}
+    F -->|fallo| G[Conservar Champion]
+    F -->|ok| H[Aprobación manual]
+    H -->|rechazo| G
+    H -->|Approved| I[Actualizar Model Serving]
+    I --> J[Smoke test]
+    J -->|fallo| G
+    J -->|éxito| K[Alias Champion]
+```
 
-La separación permite mejorar la librería sin cambiar el contrato de entrada
-de los modelos. La fuente de entrenamiento es la tabla Delta de Unity Catalog;
-CSV queda reservado para migraciones o bootstrap explícitos.
+Responsabilidades:
+
+- Entrenamiento: datos, modelo, evaluación inicial y registro Challenger.
+- Evaluation: métricas, artefactos y gates contra Champion.
+- Approval: validación del tag de aprobación de Unity Catalog.
+- Deployment: actualización del endpoint, smoke test y alias Champion.
+- Create job: creación y conexión del Deployment Job.
+
+MLflow Tracking conserva runs, métricas y artefactos. Unity Catalog conserva el
+modelo, sus versiones, tags, descripciones y aliases. Lakeflow Jobs orquesta
+las tareas. Model Serving expone exactamente la versión aprobada.
+
+Las utilidades se encuentran en `tools/src/iris_mlflow_utils`: `config.py`,
+`data.py`, `evaluation.py`, `deployment.py`, `registry.py` y `serving.py`.

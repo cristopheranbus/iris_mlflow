@@ -145,6 +145,88 @@ class TrainingConfig:
             raise ValueError(f"model_framework no soportado: {self.model_framework}.")
 
 
+@dataclass(frozen=True)
+class DeploymentConfig:
+    """Settings for evaluation gates and Model Serving promotion."""
+
+    model_name: str
+    endpoint_name: str
+    min_test_f1_weighted: float = 0.90
+    min_test_accuracy: float = 0.90
+    max_metric_regression: float = 0.01
+    required_approval_tag: str = "Approval_Check"
+    champion_alias: str = "Champion"
+    challenger_alias: str = "Challenger"
+    smoke_test_rows: int = 1
+    serving_timeout_seconds: int = 900
+    serving_poll_seconds: int = 15
+    notebook_root: str = "/Workspace/Shared/iris_mlflow/deployment"
+    job_name: str = "iris-model-deployment"
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+", self.model_name):
+            raise ValueError("deployment.model_name debe usar catalog.schema.model.")
+        if not self.endpoint_name.strip():
+            raise ValueError("deployment.endpoint_name no puede estar vacío.")
+        if not 0 <= self.min_test_f1_weighted <= 1 or not 0 <= self.min_test_accuracy <= 1:
+            raise ValueError("Los thresholds de deployment deben estar entre 0 y 1.")
+        if self.max_metric_regression < 0:
+            raise ValueError("max_metric_regression no puede ser negativo.")
+
+
+def build_deployment_config() -> DeploymentConfig:
+    """Build deployment settings from TOML with environment overrides."""
+
+    common = dict(load_file_config().get("common", {}))
+    deployment = dict(load_file_config().get("deployment", {}))
+
+    def setting(name: str, fallback: Any) -> str:
+        return get_setting(name, str(fallback), name)
+
+    return DeploymentConfig(
+        model_name=setting(
+            "IRIS_DEPLOYMENT_MODEL_NAME",
+            deployment.get("model_name", common.get("registered_model_name", "")),
+        ),
+        endpoint_name=setting(
+            "IRIS_SERVING_ENDPOINT_NAME", deployment.get("endpoint_name", "iris-classifier")
+        ),
+        min_test_f1_weighted=float(
+            setting("IRIS_MIN_TEST_F1_WEIGHTED", deployment.get("min_test_f1_weighted", 0.90))
+        ),
+        min_test_accuracy=float(
+            setting("IRIS_MIN_TEST_ACCURACY", deployment.get("min_test_accuracy", 0.90))
+        ),
+        max_metric_regression=float(
+            setting("IRIS_MAX_METRIC_REGRESSION", deployment.get("max_metric_regression", 0.01))
+        ),
+        required_approval_tag=setting(
+            "IRIS_REQUIRED_APPROVAL_TAG",
+            deployment.get("required_approval_tag", "Approval_Check"),
+        ),
+        champion_alias=setting(
+            "IRIS_DEPLOYMENT_CHAMPION_ALIAS", deployment.get("champion_alias", "Champion")
+        ),
+        challenger_alias=setting(
+            "IRIS_DEPLOYMENT_CHALLENGER_ALIAS", deployment.get("challenger_alias", "Challenger")
+        ),
+        smoke_test_rows=int(setting("IRIS_SMOKE_TEST_ROWS", deployment.get("smoke_test_rows", 1))),
+        serving_timeout_seconds=int(
+            setting("IRIS_SERVING_TIMEOUT_SECONDS", deployment.get("serving_timeout_seconds", 900))
+        ),
+        serving_poll_seconds=int(
+            setting("IRIS_SERVING_POLL_SECONDS", deployment.get("serving_poll_seconds", 15))
+        ),
+        notebook_root=setting(
+            "IRIS_DEPLOYMENT_NOTEBOOK_ROOT",
+            deployment.get("notebook_root", "/Workspace/Shared/iris_mlflow/deployment"),
+        ),
+        job_name=setting(
+            "IRIS_DEPLOYMENT_JOB_NAME", deployment.get("job_name", "iris-model-deployment")
+        ),
+    )
+
+
 def _file_value(common: dict[str, Any], name: str, fallback: Any) -> Any:
     return common.get(name, fallback)
 

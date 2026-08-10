@@ -1162,6 +1162,7 @@ dependencies = [
     { name = "mlflow" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "pyarrow" },
     { name = "requests" },
     { name = "scikit-learn" },
     { name = "xgboost" },
@@ -1169,6 +1170,7 @@ dependencies = [
 
 [package.optional-dependencies]
 databricks = [
+    { name = "databricks-sdk" },
     { name = "mlflow", extra = ["databricks"] },
 ]
 
@@ -1183,11 +1185,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "databricks-sdk", marker = "extra == 'databricks'", specifier = ">=0.28" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "mlflow", specifier = ">=3.1,<4" },
     { name = "mlflow", extras = ["databricks"], marker = "extra == 'databricks'", specifier = ">=3.1,<4" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },
+    { name = "pyarrow", specifier = ">=15" },
     { name = "requests", specifier = ">=2.32" },
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "xgboost", specifier = ">=2.1" },
