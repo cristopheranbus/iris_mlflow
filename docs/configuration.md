@@ -1,5 +1,32 @@
 # Configuración
 
+## Perfiles de runtime
+
+`config/training.toml` separa la configuración local de la productiva:
+
+```toml
+[runtime]
+mode = "auto"
+
+[runtime.local]
+dataset_path = "data/local/iris_features.csv"
+tracking_uri = "sqlite:///mlflow.db"
+registry_uri = "sqlite:///mlflow.db"
+registered_model_name = "iris_classifier"
+
+[runtime.databricks]
+feature_table = "workspace.default.iris_features"
+registered_model_name = "workspace.default.iris_classifier"
+registry_uri = "databricks-uc"
+```
+
+La precedencia del runtime es `IRIS_RUNTIME`, luego `dbutils`, luego
+`DATABRICKS_RUNTIME_VERSION` y finalmente `local`. Variables locales
+permitidas: `IRIS_LOCAL_DATASET_PATH`, `MLFLOW_TRACKING_URI`,
+`MLFLOW_REGISTRY_URI`, `IRIS_REGISTERED_MODEL_NAME` e
+`IRIS_LOCAL_AUTO_APPROVE`. En producción sólo se lee la tabla Delta configurada;
+no se debe guardar ningún secreto en TOML ni en el repositorio.
+
 La configuración versionada vive en `config/training.toml`. Las variables de
 entorno tienen prioridad sobre TOML. Los widgets sólo se leen cuando se
 habilitan explícitamente y no contienen valores estáticos del flujo.
@@ -36,3 +63,7 @@ IRIS_DEPLOYMENT_JOB_NAME
 Tokens y credenciales deben resolverse con Databricks Secrets o la identidad
 administrada del job. Nunca se guardan en TOML, notebooks, tags o mensajes de
 error.
+
+En modo local, MLflow usa `sqlite:///mlflow.db` para tracking y registry. Esto
+evita el backend filesystem legado de MLflow y conserva runs, artefactos,
+versiones y aliases en un único almacén local.

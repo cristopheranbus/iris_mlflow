@@ -1,0 +1,13 @@
+{
+  "base_url": "/",
+  "hostname": "localhost",
+  "password": false,
+  "pid": 29052,
+  "port": 8888,
+  "root_dir": "C:\\Users\\crist\\Documents\\MisDev\\iris_mlflow",
+  "secure": false,
+  "sock": "",
+  "token": "de31fc725cd7b86033a43e495ab667d7bcf884483f6550c5",
+  "url": "http://localhost:8888/",
+  "version": "2.20.0"
+}

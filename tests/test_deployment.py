@@ -1,18 +1,24 @@
 """Tests for evaluation artifacts and promotion gates."""
 
+import builtins
 import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.datasets import load_iris  # type: ignore[import-untyped]
 from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
 
 from iris_mlflow_utils import (
+    approve_locally,
     build_evaluation_artifacts,
     build_probability_metrics,
+    detect_runtime,
     evaluate_model,
     evaluate_promotion_gate,
+    load_dataset_for_runtime,
+    simulate_local_deployment,
 )
 from iris_mlflow_utils.config import DeploymentConfig, build_deployment_config
 
@@ -36,7 +42,9 @@ def test_multiclass_artifacts_include_roc_lift_gain_and_confusion(tmp_path: Path
     )
 
     assert metrics["roc_auc_ovr_macro"] > 0.9
-    assert {"confusion_matrix.png", "roc_curve_by_class.png", "lift_curve_by_class.png"}.issubset(paths)
+    assert {"confusion_matrix.png", "roc_curve_by_class.png", "lift_curve_by_class.png"}.issubset(
+        paths
+    )
     assert (tmp_path / "evaluation" / "cumulative_gain_data.json").is_file()
     assert (tmp_path / "evaluation" / "feature_importance.json").is_file() is False
 
@@ -78,9 +86,7 @@ def test_deployment_notebooks_keep_only_dynamic_job_inputs() -> None:
 def test_deployment_job_uses_databricks_approval_task_name() -> None:
     repository_root = Path(__file__).parents[1]
     notebook = json.loads(
-        (repository_root / "deployment" / "create_deployment_job.ipynb").read_text(
-            encoding="utf-8"
-        )
+        (repository_root / "deployment" / "create_deployment_job.ipynb").read_text(encoding="utf-8")
     )
     source = "\n".join(
         "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
@@ -91,10 +97,76 @@ def test_deployment_job_uses_databricks_approval_task_name() -> None:
     assert "'depends_on': [{'task_key': 'Approval_Check'}]" in source
 
 
-def test_deployment_config_comes_from_versioned_toml() -> None:
+def test_deployment_config_comes_from_versioned_toml(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IRIS_RUNTIME", "databricks")
     config = build_deployment_config()
 
     assert config.model_name == "workspace.default.iris_classifier"
     assert config.endpoint_name == "iris-classifier"
     assert config.min_test_f1_weighted == 0.90
     assert config.required_approval_tag == "Approval_Check"
+    assert config.notebook_root == "/Workspace/Shared/mlflow_deployment"
+    assert config.job_name == "model-deployment"
+
+
+def test_runtime_detection_prefers_explicit_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IRIS_RUNTIME", "local")
+    monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "15.4")
+
+    assert detect_runtime() == "local"
+
+
+def test_runtime_detection_identifies_dbutils(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("IRIS_RUNTIME", raising=False)
+    monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+    monkeypatch.setattr(
+        builtins,
+        "get_ipython",
+        lambda: type("Shell", (), {"user_ns": {"dbutils": object()}})(),
+        raising=False,
+    )
+
+    assert detect_runtime() == "databricks"
+
+
+def test_local_dataset_loader_never_requires_spark() -> None:
+    config = build_runtime_config_for_test()
+    dataset = load_dataset_for_runtime("local", spark=None, config=config)
+
+    assert len(dataset.dataframe) == 15
+
+
+def test_local_approval_and_deployment_write_manifest(tmp_path: Path) -> None:
+    class FakeRegistry:
+        def __init__(self) -> None:
+            self.tags: dict[str, str] = {}
+            self.aliases: dict[str, str] = {}
+
+        def set_model_version_tag(self, name: str, version: str, key: str, value: str) -> None:
+            self.tags[key] = value
+
+        def set_registered_model_alias(self, name: str, alias: str, version: str) -> None:
+            self.aliases[alias] = version
+
+    client = FakeRegistry()
+    assert approve_locally(client, model_name="iris_classifier", model_version="3")[
+        "Approval_Check"
+    ] == "Approved"
+    payload = simulate_local_deployment(
+        client,
+        model_name="iris_classifier",
+        model_version="3",
+        champion_alias="Champion",
+        manifest_path=tmp_path / "manifest.json",
+        smoke_test_passed=True,
+    )
+
+    assert payload["deployment_skipped"] is True
+    assert client.aliases["Champion"] == "3"
+    assert json.loads((tmp_path / "manifest.json").read_text())['smoke_test'] == "passed"
+
+
+def build_runtime_config_for_test() -> object:
+    from iris_mlflow_utils.config import build_config
+
+    return build_config(model_slug="random_forest")

@@ -18,6 +18,23 @@ target_column = "Species"
 model_registration_timeout_seconds = 300
 model_registration_poll_seconds = 5
 
+[runtime]
+mode = "auto"
+
+[runtime.local]
+dataset_path = "data/local/iris_features.csv"
+tracking_uri = "sqlite:///mlflow.db"
+registry_uri = "sqlite:///mlflow.db"
+registered_model_name = "iris_classifier"
+experiment_name = "iris_mlflow_local"
+auto_approve = true
+deployment_manifest_path = "artifacts/local_deployment_manifest.json"
+
+[runtime.databricks]
+feature_table = "workspace.default.iris_features"
+registered_model_name = "workspace.default.iris_classifier"
+registry_uri = "databricks-uc"
+
 [models.random_forest]
 model_type = "random_forest"
 model_framework = "sklearn"
@@ -60,5 +77,5 @@ challenger_alias = "Challenger"
 smoke_test_rows = 1
 serving_timeout_seconds = 900
 serving_poll_seconds = 15
-notebook_root = "/Workspace/Shared/iris_mlflow/deployment"
-job_name = "iris-model-deployment"
+notebook_root = "/Workspace/Shared/mlflow_deployment"
+job_name = "model-deployment"
