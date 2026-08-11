@@ -5,7 +5,6 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 import requests
-
 from iris_mlflow_utils.serving import (
     DatabricksEndpointError,
     build_invocation_url,
@@ -53,8 +52,13 @@ def test_predict_uses_dataframe_split_and_returns_predictions(
     monkeypatch.setattr("iris_mlflow_utils.serving.requests.post", fake_post)
 
     assert predict(["feature"], [[1.0], [2.0]]) == [0, 1]
-    assert captured["url"] == "https://workspace.example/serving-endpoints/iris/invocations"
-    assert captured["json"] == {"dataframe_split": {"columns": ["feature"], "data": [[1.0], [2.0]]}}
+    assert (
+        captured["url"]
+        == "https://workspace.example/serving-endpoints/iris/invocations"
+    )
+    assert captured["json"] == {
+        "dataframe_split": {"columns": ["feature"], "data": [[1.0], [2.0]]}
+    }
 
 
 def test_predict_dataframe_validates_prediction_count(
