@@ -9,7 +9,9 @@ from iris_mlflow_utils.registry import synchronize_model_registry_metadata
 
 
 class FakeModelVersion:
-    def __init__(self, version: str, tags: dict[str, str], description: str = "") -> None:
+    def __init__(
+        self, version: str, tags: dict[str, str], description: str = ""
+    ) -> None:
         self.version = version
         self.tags = tags
         self.description = description
@@ -29,7 +31,9 @@ class FakeClient:
         self.version = FakeModelVersion("3", {})
         self.alias_version = ""
 
-    def set_model_version_tag(self, name: str, version: str, key: str, value: Any) -> None:
+    def set_model_version_tag(
+        self, name: str, version: str, key: str, value: Any
+    ) -> None:
         self.version.tags[key] = str(value)
 
     def set_registered_model_tag(self, name: str, key: str, value: Any) -> None:
@@ -38,10 +42,14 @@ class FakeClient:
     def update_registered_model(self, *, name: str, description: str) -> None:
         self.model.description = description
 
-    def update_model_version(self, *, name: str, version: str, description: str) -> None:
+    def update_model_version(
+        self, *, name: str, version: str, description: str
+    ) -> None:
         self.version.description = description
 
-    def set_registered_model_alias(self, *, name: str, alias: str, version: str) -> None:
+    def set_registered_model_alias(
+        self, *, name: str, alias: str, version: str
+    ) -> None:
         self.alias_version = version
 
     def get_registered_model(self, name: str) -> FakeRegisteredModel:

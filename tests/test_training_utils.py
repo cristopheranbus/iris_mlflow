@@ -6,10 +6,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from mlflow.models import evaluate
-from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
-from sklearn.tree import DecisionTreeClassifier  # type: ignore[import-untyped]
-
 from iris_mlflow_utils import (
     build_classification_table,
     build_metrics_summary_table,
@@ -18,6 +14,9 @@ from iris_mlflow_utils import (
     load_dataset_frame,
 )
 from iris_mlflow_utils.config import TrainingConfig, build_config
+from mlflow.models import evaluate
+from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
+from sklearn.tree import DecisionTreeClassifier  # type: ignore[import-untyped]
 
 
 def iris_csv(tmp_path: Path) -> Path:
@@ -28,7 +27,14 @@ def iris_csv(tmp_path: Path) -> Path:
             "SepalWidthCm": [3.5, 3.4, 3.2, 3.3, 3.1, 3.0],
             "PetalLengthCm": [1.4, 1.5, 4.5, 4.7, 5.6, 5.5],
             "PetalWidthCm": [0.2, 0.2, 1.5, 1.6, 2.4, 2.1],
-            "Species": ["setosa", "setosa", "versicolor", "versicolor", "virginica", "virginica"],
+            "Species": [
+                "setosa",
+                "setosa",
+                "versicolor",
+                "versicolor",
+                "virginica",
+                "virginica",
+            ],
         }
     )
     path = tmp_path / "Iris.csv"
@@ -146,7 +152,9 @@ def test_evaluation_tables_have_stable_columns() -> None:
     )
 
     assert {"partition", "metric", "value"}.issubset(metrics_table.columns)
-    assert {"class_id", "class_name", "precision", "f1_score"}.issubset(classes_table.columns)
+    assert {"class_id", "class_name", "precision", "f1_score"}.issubset(
+        classes_table.columns
+    )
 
 
 def test_mlflow_evaluation_returns_metrics() -> None:
@@ -168,9 +176,13 @@ def test_mlflow_evaluation_returns_metrics() -> None:
 def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
     repository_root = Path(__file__).parents[1]
     for notebook_name in ("random_forest.ipynb", "xgboost.ipynb"):
-        notebook = json.loads((repository_root / notebook_name).read_text(encoding="utf-8"))
+        notebook = json.loads(
+            (repository_root / notebook_name).read_text(encoding="utf-8")
+        )
         source = "\n".join(
-            "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
+            "".join(cell["source"])
+            for cell in notebook["cells"]
+            if cell["cell_type"] == "code"
         )
         assert "load_dataset_for_runtime" in source
         assert "RUNTIME_MODE = detect_runtime()" in source
@@ -202,9 +214,13 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
 
 def test_endpoint_notebook_uses_external_configuration_and_no_token_fallback() -> None:
     repository_root = Path(__file__).parents[1]
-    notebook = json.loads((repository_root / "test_endpoint.ipynb").read_text(encoding="utf-8"))
+    notebook = json.loads(
+        (repository_root / "test_endpoint.ipynb").read_text(encoding="utf-8")
+    )
     source = "\n".join(
-        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
     )
     assert "load_file_config" in source
     assert "dbutils.widgets" not in source
@@ -214,7 +230,9 @@ def test_endpoint_notebook_uses_external_configuration_and_no_token_fallback() -
 def test_build_config_exposes_training_parameters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier")
+    monkeypatch.setenv(
+        "IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier"
+    )
     monkeypatch.setenv("IRIS_RUNTIME", "databricks")
     config = build_config(
         model_slug="random_forest",
