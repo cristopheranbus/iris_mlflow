@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .runtime import RuntimeMode, detect_runtime, get_runtime_parameter
+
 _MODEL_TYPES = {"random_forest", "xgboost", "neural_network"}
 _MODEL_FRAMEWORKS = {"sklearn", "xgboost", "pytorch", "tensorflow"}
 
@@ -27,7 +29,7 @@ def _get_dbutils() -> Any:
 def is_databricks() -> bool:
     """Return whether the current process is running in Databricks."""
 
-    return _get_dbutils() is not None or bool(os.getenv("DATABRICKS_RUNTIME_VERSION"))
+    return detect_runtime() == "databricks"
 
 
 def _find_config_path(path: Path | None = None) -> Path:
@@ -119,18 +121,29 @@ class TrainingConfig:
     model_type: str = ""
     model_framework: str = ""
     model_params: dict[str, Any] = field(default_factory=dict)
+    runtime_mode: RuntimeMode = "databricks"
+    auto_approve: bool = False
+    deployment_manifest_path: Path = Path("artifacts/local_deployment_manifest.json")
 
     def __post_init__(self) -> None:
         if not 0 < self.test_size < 1:
             raise ValueError("test_size debe estar entre 0 y 1.")
         if self.primary_metric not in {"test_accuracy", "test_f1_weighted"}:
             raise ValueError("primary_metric no está soportada.")
-        for value, message in (
-            (self.registered_model_name, "registered_model_name debe usar catalog.schema.model."),
-            (self.feature_table, "feature_table debe usar catalog.schema.table."),
-        ):
-            if not re.fullmatch(r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+", value):
-                raise ValueError(message)
+        if self.runtime_mode == "databricks":
+            for value, message in (
+                (
+                    self.registered_model_name,
+                    "registered_model_name debe usar catalog.schema.model.",
+                ),
+                (self.feature_table, "feature_table debe usar catalog.schema.table."),
+            ):
+                if not re.fullmatch(r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+", value):
+                    raise ValueError(message)
+        elif not re.fullmatch(r"[A-Za-z0-9_]+", self.registered_model_name):
+            raise ValueError(
+                "El modelo local debe usar un nombre simple, por ejemplo iris_classifier."
+            )
         if not self.champion_alias or not self.challenger_alias:
             raise ValueError("Los aliases Champion y Challenger no pueden estar vacíos.")
         if self.model_input_example_rows < 1:
@@ -162,10 +175,19 @@ class DeploymentConfig:
     serving_poll_seconds: int = 15
     notebook_root: str = "/Workspace/Shared/iris_mlflow/deployment"
     job_name: str = "iris-model-deployment"
+    runtime_mode: RuntimeMode = "databricks"
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+", self.model_name):
-            raise ValueError("deployment.model_name debe usar catalog.schema.model.")
+        valid_name = (
+            re.fullmatch(r"[A-Za-z0-9_]+", self.model_name)
+            if self.runtime_mode == "local"
+            else re.fullmatch(r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+", self.model_name)
+        )
+        if not valid_name:
+            raise ValueError(
+                "deployment.model_name debe usar catalog.schema.model en Databricks "
+                "o un nombre simple en local."
+            )
         if not self.endpoint_name.strip():
             raise ValueError("deployment.endpoint_name no puede estar vacío.")
         if not 0 <= self.min_test_f1_weighted <= 1 or not 0 <= self.min_test_accuracy <= 1:
@@ -177,8 +199,11 @@ class DeploymentConfig:
 def build_deployment_config() -> DeploymentConfig:
     """Build deployment settings from TOML with environment overrides."""
 
-    common = dict(load_file_config().get("common", {}))
-    deployment = dict(load_file_config().get("deployment", {}))
+    file_config = load_file_config()
+    common = dict(file_config.get("common", {}))
+    deployment = dict(file_config.get("deployment", {}))
+    runtime_mode = detect_runtime()
+    runtime_config = dict(file_config.get("runtime", {}).get(runtime_mode, {}))
 
     def setting(name: str, fallback: Any) -> str:
         return get_setting(name, str(fallback), name)
@@ -186,7 +211,10 @@ def build_deployment_config() -> DeploymentConfig:
     return DeploymentConfig(
         model_name=setting(
             "IRIS_DEPLOYMENT_MODEL_NAME",
-            deployment.get("model_name", common.get("registered_model_name", "")),
+            runtime_config.get(
+                "registered_model_name",
+                deployment.get("model_name", common.get("registered_model_name", "")),
+            ),
         ),
         endpoint_name=setting(
             "IRIS_SERVING_ENDPOINT_NAME", deployment.get("endpoint_name", "iris-classifier")
@@ -224,6 +252,7 @@ def build_deployment_config() -> DeploymentConfig:
         job_name=setting(
             "IRIS_DEPLOYMENT_JOB_NAME", deployment.get("job_name", "iris-model-deployment")
         ),
+        runtime_mode=runtime_mode,
     )
 
 
@@ -242,6 +271,8 @@ def build_config(
 
     file_config = load_file_config()
     common = dict(file_config.get("common", {}))
+    runtime_mode = detect_runtime()
+    runtime_config = dict(file_config.get("runtime", {}).get(runtime_mode, {}))
     model = dict(file_config.get("models", {}).get(model_slug, {}))
     params = dict(model.pop("params", {}))
     if model_defaults:
@@ -253,19 +284,29 @@ def build_config(
     def setting(name: str, fallback: Any) -> str:
         return get_setting(name, str(fallback), name)
 
+    config_root = _find_config_path().parent.parent
     return TrainingConfig(
-        dataset_path=None,
         experiment_name=setting(
             "IRIS_EXPERIMENT_NAME",
-            _file_value(common, "experiment_name", databricks_default_experiment),
+            runtime_config.get(
+                "experiment_name",
+                _file_value(common, "experiment_name", databricks_default_experiment),
+            ),
         ),
         artifact_location=setting("IRIS_ARTIFACT_LOCATION", ""),
-        tracking_uri=setting("MLFLOW_TRACKING_URI", ""),
-        registry_uri=setting("MLFLOW_REGISTRY_URI", "databricks-uc"),
-        registered_model_name=setting("IRIS_REGISTERED_MODEL_NAME", default_name),
+        tracking_uri=setting("MLFLOW_TRACKING_URI", runtime_config.get("tracking_uri", "")),
+        registry_uri=setting(
+            "MLFLOW_REGISTRY_URI", runtime_config.get("registry_uri", "databricks-uc")
+        ),
+        registered_model_name=setting(
+            "IRIS_REGISTERED_MODEL_NAME", runtime_config.get("registered_model_name", default_name)
+        ),
         feature_table=setting(
             "IRIS_FEATURE_TABLE",
-            _file_value(common, "feature_table", "workspace.default.iris_features"),
+            runtime_config.get(
+                "feature_table",
+                _file_value(common, "feature_table", "workspace.default.iris_features"),
+            ),
         ),
         champion_alias=setting(
             "IRIS_CHAMPION_ALIAS", _file_value(common, "champion_alias", "Champion")
@@ -317,4 +358,39 @@ def build_config(
         model_type=str(model.get("model_type", "")),
         model_framework=str(model.get("model_framework", "")),
         model_params=params,
+        runtime_mode=runtime_mode,
+        dataset_path=(
+            _resolve_project_path(
+                get_runtime_parameter(
+                    "IRIS_LOCAL_DATASET_PATH",
+                    str(runtime_config.get("dataset_path", "")),
+                    runtime_mode,
+                ),
+                config_root,
+            )
+            if runtime_mode == "local"
+            else None
+        ),
+        auto_approve=str(runtime_config.get("auto_approve", False)).lower() in {"1", "true", "yes"},
+        deployment_manifest_path=_resolve_project_path(
+            str(
+                runtime_config.get(
+                    "deployment_manifest_path", "artifacts/local_deployment_manifest.json"
+                )
+            ),
+            config_root,
+        ),
     )
+
+
+def build_runtime_config(*, model_slug: str) -> TrainingConfig:
+    """Build a configuration selected by automatic runtime detection."""
+
+    return build_config(model_slug=model_slug)
+
+
+def _resolve_project_path(value: str, project_root: Path) -> Path:
+    """Resolve paths in TOML relative to the repository root."""
+
+    candidate = Path(value).expanduser()
+    return candidate if candidate.is_absolute() else (project_root / candidate).resolve()

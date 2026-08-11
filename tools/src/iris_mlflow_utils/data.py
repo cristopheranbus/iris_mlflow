@@ -11,6 +11,7 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder  # type: ignore[import-untyped]
 
 from .constants import FEATURE_COLUMNS
+from .runtime import RuntimeMode
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,31 @@ def load_dataset(
         dataframe,
         target_column=target_column,
         id_column=id_column,
+    )
+
+
+def load_dataset_for_runtime(
+    runtime_mode: RuntimeMode,
+    *,
+    spark: Any | None,
+    config: Any,
+) -> DatasetBundle:
+    """Load local files or the Unity Catalog table according to runtime."""
+
+    if runtime_mode == "local":
+        if config.dataset_path is None:
+            raise ValueError("El modo local requiere runtime.local.dataset_path.")
+        return load_dataset(
+            config.dataset_path,
+            target_column=config.target_column,
+        )
+    if spark is None:
+        raise RuntimeError("El modo Databricks requiere una sesión Spark activa.")
+    return load_dataset_from_spark(
+        spark,
+        table_name=config.feature_table,
+        table_version=config.feature_table_version,
+        target_column=config.target_column,
     )
 
 

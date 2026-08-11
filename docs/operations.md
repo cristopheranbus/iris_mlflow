@@ -34,6 +34,18 @@ parámetros de nivel de job y limita la concurrencia a una ejecución.
 Se puede ejecutar el job desde Jobs o desde la página de la versión, indicando
 `model_name` y `model_version`. La versión debe superar evaluación y aprobación.
 
+## Prueba local
+
+Configura `IRIS_RUNTIME=local`, ejecuta un notebook de entrenamiento y luego,
+en orden, `evaluate_model.ipynb`, `approval.ipynb`, `deploy_model.ipynb` y
+`create_deployment_job.ipynb`. Con `IRIS_LOCAL_AUTO_APPROVE=true` la aprobación
+se registra automáticamente después de superar los gates. El despliegue local
+es un smoke test y genera un manifiesto, no un endpoint.
+
+En Databricks configura `IRIS_RUNTIME=databricks` y usa los parámetros
+`model_name` y `model_version`; ese es el único flujo productivo y actualiza
+Model Serving.
+
 ## Rollback
 
 Seguir `docs/rollback.md`. El rollback restaura primero el endpoint y luego el

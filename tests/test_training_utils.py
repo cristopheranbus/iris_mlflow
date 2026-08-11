@@ -172,10 +172,10 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
         source = "\n".join(
             "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
         )
-        assert "FEATURE_TABLE = config.feature_table" in source
-        assert "load_dataset_from_spark" in source
+        assert "load_dataset_for_runtime" in source
+        assert "RUNTIME_MODE = detect_runtime()" in source
         assert "ensure_feature_table" not in source
-        assert "table_name=FEATURE_TABLE" in source
+        assert "spark=globals().get('spark')" in source
         assert "config.registered_model_name" in source
         assert "config.challenger_alias" in source
         assert "set_registered_model_alias" in source
@@ -215,6 +215,7 @@ def test_build_config_exposes_training_parameters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier")
+    monkeypatch.setenv("IRIS_RUNTIME", "databricks")
     config = build_config(
         model_slug="random_forest",
         registered_model_name="workspace.default.fallback",

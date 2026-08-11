@@ -6,19 +6,27 @@ notebooks de `deployment/` gestionan la promoción posterior.
 
 ```mermaid
 flowchart LR
-    A[Tabla Delta iris_features] --> B[Entrenamiento]
-    B --> C[Modelo UC Challenger]
-    C --> D[Deployment Job]
-    D --> E[Evaluación y artefactos]
-    E --> F{Gates de calidad}
-    F -->|fallo| G[Conservar Champion]
-    F -->|ok| H[Aprobación manual]
-    H -->|rechazo| G
-    H -->|Approved| I[Actualizar Model Serving]
-    I --> J[Smoke test]
-    J -->|fallo| G
+    A{Runtime} -->|Databricks| B[Tabla Delta iris_features]
+    A -->|Local| L[CSV de desarrollo]
+    B --> C[Entrenamiento Spark MLflow UC]
+    L --> M[Entrenamiento local MLflow SQLite]
+    C --> N[Challenger]
+    M --> N
+    N --> D[Evaluación y artefactos]
+    D --> E{Gates de calidad}
+    E -->|fallo| F[Conservar Champion]
+    E -->|ok| G[Aprobación]
+    G -->|Databricks| H[Model Serving]
+    G -->|Local| I[Despliegue simulado]
+    H --> J[Smoke test]
+    I --> J
+    J -->|fallo| F
     J -->|éxito| K[Alias Champion]
 ```
+
+La rama local comparte evaluación, gates, aliases y artefactos, pero reemplaza
+Unity Catalog y Model Serving por SQLite y un manifiesto auditable. Sólo la
+rama Databricks es productiva.
 
 Responsabilidades:
 

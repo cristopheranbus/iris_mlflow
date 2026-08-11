@@ -16,6 +16,26 @@ Los notebooks de entrenamiento leen directamente la tabla Delta
 `workspace.default.iris_features`. No leen ni crean CSV durante el flujo
 normal.
 
+## Ejecución local y Databricks
+
+Los mismos notebooks detectan el entorno automáticamente. Para probar sin
+Spark ni Databricks, usa el CSV de desarrollo y MLflow local:
+
+```powershell
+$env:IRIS_RUNTIME = "local"
+cd tools
+uv run jupyter notebook ..\random_forest.ipynb
+```
+
+El modo local usa `data/local/iris_features.csv`, SQLite (`mlflow.db`) y
+simula la aprobación, el smoke test y la promoción de `Champion`. El resultado
+queda en `artifacts/local_deployment_manifest.json`; no crea un endpoint HTTP.
+
+En Databricks se conserva el flujo productivo con Delta, Unity Catalog,
+Deployment Jobs y Model Serving. Puede forzarse explícitamente con
+`$env:IRIS_RUNTIME = "databricks"`. La existencia del CSV local nunca cambia
+la fuente productiva.
+
 ## Componentes
 
 - `random_forest.ipynb`: entrenamiento Random Forest.

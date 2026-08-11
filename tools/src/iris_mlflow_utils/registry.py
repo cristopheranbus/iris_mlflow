@@ -19,6 +19,9 @@ def build_registry_client(registry_uri: str = "databricks-uc") -> MlflowClient:
 def _descriptions(config: TrainingConfig, *, version: str, run_id: str) -> tuple[str, str]:
     model_type = config.model_type or "unknown"
     framework = config.model_framework or "unknown"
+    feature_source = (
+        str(config.dataset_path) if config.runtime_mode == "local" else config.feature_table
+    )
     model_description = (
         "Clasificador Iris gestionado en Unity Catalog. "
         f"Último algoritmo entrenado: {model_type}. Framework: {framework}. "
@@ -27,7 +30,7 @@ def _descriptions(config: TrainingConfig, *, version: str, run_id: str) -> tuple
     version_description = (
         f"Versión {version} del clasificador Iris. Algoritmo: {model_type}. "
         f"Framework: {framework}. Dataset: {config.dataset_version}. "
-        f"Feature table: {config.feature_table}. "
+        f"Feature source: {feature_source}. "
         f"Feature table version: {config.feature_table_version or 'latest'}. "
         f"Proyecto: {config.project_version}. Run: {run_id}. "
         f"Alias candidato: {config.challenger_alias}."
@@ -48,20 +51,24 @@ def synchronize_model_registry_metadata(
     version_string = str(version)
     model_type = config.model_type or "unknown"
     framework = config.model_framework or "unknown"
+    feature_source = "local_file" if config.runtime_mode == "local" else "unity_catalog"
+    feature_location = (
+        str(config.dataset_path) if config.runtime_mode == "local" else config.feature_table
+    )
     version_tags = {
         "model_type": model_type,
         "model_framework": framework,
         "task": "classification",
         "dataset": "iris",
-        "feature_source": "unity_catalog",
-        "feature_table": config.feature_table,
+        "feature_source": feature_source,
+        "feature_table": feature_location,
         "training_stage": "challenger",
     }
     model_tags = {
         "model_type": model_type,
         "model_framework": framework,
         "task": "classification",
-        "feature_source": "unity_catalog",
+        "feature_source": feature_source,
         "latest_version": version_string,
     }
     for key, value in version_tags.items():
