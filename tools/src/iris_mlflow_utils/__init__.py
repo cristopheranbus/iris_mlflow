@@ -23,8 +23,12 @@ from .data import (  # noqa: E402
 )
 from .deployment import (  # noqa: E402
     PromotionDecision,
+    ServingEndpointSnapshot,
+    capture_serving_endpoint,
+    ensure_deployment_job,
     evaluate_promotion_gate,
     promote_champion,
+    restore_serving_endpoint,
     update_serving_endpoint,
     wait_for_endpoint_ready,
 )
@@ -91,6 +95,10 @@ __all__ = [
     "load_dataset_from_spark",
     "load_dataset_for_runtime",
     "PromotionDecision",
+    "ServingEndpointSnapshot",
+    "capture_serving_endpoint",
+    "restore_serving_endpoint",
+    "ensure_deployment_job",
     "evaluate_promotion_gate",
     "update_serving_endpoint",
     "wait_for_endpoint_ready",

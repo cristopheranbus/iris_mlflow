@@ -11,10 +11,14 @@ from iris_mlflow_utils import (
     approve_locally,
     build_evaluation_artifacts,
     build_probability_metrics,
+    capture_serving_endpoint,
     detect_runtime,
+    ensure_deployment_job,
     evaluate_model,
     evaluate_promotion_gate,
     load_dataset_for_runtime,
+    promote_champion,
+    restore_serving_endpoint,
     simulate_local_deployment,
 )
 from iris_mlflow_utils.config import DeploymentConfig, build_deployment_config
@@ -43,12 +47,17 @@ def test_multiclass_artifacts_include_roc_lift_gain_and_confusion(
     )
 
     assert metrics["roc_auc_ovr_macro"] > 0.9
+    assert metrics["log_loss"] >= 0.0
     assert {
         "confusion_matrix.png",
         "roc_curve_by_class.png",
         "lift_curve_by_class.png",
+        "lift_curve_macro.png",
     }.issubset(paths)
     assert (tmp_path / "evaluation" / "cumulative_gain_data.json").is_file()
+    gain = pd.read_json(tmp_path / "evaluation" / "cumulative_gain_data.json")
+    final_gain = gain.groupby("class_id", as_index=False).tail(1)
+    assert np.allclose(final_gain["cumulative_gain"], 1.0)
     assert (tmp_path / "evaluation" / "feature_importance.json").is_file() is False
 
 
@@ -93,7 +102,60 @@ def test_deployment_notebooks_keep_only_dynamic_job_inputs() -> None:
         )
 
 
-def test_deployment_job_uses_databricks_approval_task_name() -> None:
+def test_evaluation_notebook_links_run_and_logged_model() -> None:
+    repository_root = Path(__file__).parents[1]
+    notebook = json.loads(
+        (repository_root / "deployment" / "evaluate_model.ipynb").read_text(
+            encoding="utf-8"
+        )
+    )
+    source = "\n".join(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+    )
+
+    assert "ensure_mlflow_experiment" in source
+    assert "model_id=logged_model_id" in source
+    assert "evaluation_run_id" in source
+    assert "evaluation_model_id" in source
+
+
+def test_deployment_notebook_restores_endpoint_before_failing() -> None:
+    repository_root = Path(__file__).parents[1]
+    notebook = json.loads(
+        (repository_root / "deployment" / "deploy_model.ipynb").read_text(
+            encoding="utf-8"
+        )
+    )
+    source = "\n".join(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+    )
+
+    assert "capture_serving_endpoint" in source
+    assert "restore_serving_endpoint" in source
+    assert "rollback_status" in source
+    rollback_branch = source[source.index("except Exception as deployment_error") :]
+    assert rollback_branch.index("restore_serving_endpoint") < rollback_branch.rindex(
+        "raise"
+    )
+
+
+def test_bundle_defines_governed_deployment_job() -> None:
+    repository_root = Path(__file__).parents[1]
+    bundle = (repository_root / "databricks.yml").read_text(encoding="utf-8")
+
+    assert "task_key: Approval_Check" in bundle
+    assert "task_key: approval_model" not in bundle
+    assert "max_retries: 0" in bundle
+    assert "max_concurrent_runs: 1" in bundle
+    assert "service_principal_name: ${var.production_service_principal}" in bundle
+    assert "deployment_job_id: ${resources.jobs.model_deployment.id}" in bundle
+
+
+def test_connector_notebook_does_not_create_or_reset_jobs() -> None:
     repository_root = Path(__file__).parents[1]
     notebook = json.loads(
         (repository_root / "deployment" / "create_deployment_job.ipynb").read_text(
@@ -106,9 +168,126 @@ def test_deployment_job_uses_databricks_approval_task_name() -> None:
         if cell["cell_type"] == "code"
     )
 
-    assert "'task_key': 'Approval_Check'" in source
-    assert "'task_key': 'approval_model'" not in source
-    assert "'depends_on': [{'task_key': 'Approval_Check'}]" in source
+    assert "deployment_job_id" in source
+    assert "update_registered_model" in source
+    assert "ensure_deployment_job" not in source
+    assert "IRIS_DEPLOYMENT_CLUSTER_ID" not in source
+
+
+def test_bundle_ci_uses_oidc_without_long_lived_secret() -> None:
+    repository_root = Path(__file__).parents[1]
+    workflow = (
+        repository_root / ".github" / "workflows" / "databricks-bundle.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "DATABRICKS_AUTH_TYPE: github-oidc" in workflow
+    assert "id-token: write" in workflow
+    assert "DATABRICKS_CLIENT_SECRET" not in workflow
+    assert "databricks bundle deploy -t prod" in workflow
+
+
+def test_serving_snapshot_can_restore_exact_configuration() -> None:
+    class FakeServingEndpoints:
+        def __init__(self) -> None:
+            self.updated: dict[str, object] = {}
+
+        @staticmethod
+        def get(name: str) -> dict[str, object]:
+            return {
+                "config": {
+                    "served_entities": [
+                        {
+                            "entity_name": "workspace.default.iris_classifier",
+                            "entity_version": "1",
+                            "workload_size": "Small",
+                            "scale_to_zero_enabled": True,
+                        }
+                    ],
+                    "traffic_config": {
+                        "routes": [
+                            {"served_model_name": "iris-1", "traffic_percentage": 100}
+                        ]
+                    },
+                }
+            }
+
+        def update_config(self, **kwargs: object) -> dict[str, object]:
+            self.updated = kwargs
+            return kwargs
+
+    class FakeWorkspace:
+        serving_endpoints = FakeServingEndpoints()
+
+    workspace = FakeWorkspace()
+    snapshot = capture_serving_endpoint(workspace, "iris-classifier")
+    restore_serving_endpoint(workspace, snapshot)
+
+    assert snapshot.served_entities[0]["entity_version"] == "1"
+    assert workspace.serving_endpoints.updated["name"] == "iris-classifier"
+    assert (
+        workspace.serving_endpoints.updated["traffic_config"] == snapshot.traffic_config
+    )
+
+
+def test_champion_promotion_updates_lifecycle_tags() -> None:
+    class FakeRegistry:
+        def __init__(self) -> None:
+            self.tags: dict[tuple[str, str], str] = {}
+            self.aliases: dict[str, str] = {}
+
+        def set_model_version_tag(
+            self, name: str, version: str, key: str, value: str
+        ) -> None:
+            self.tags[(version, key)] = value
+
+        def set_registered_model_alias(
+            self, name: str, alias: str, version: str
+        ) -> None:
+            self.aliases[alias] = version
+
+    registry = FakeRegistry()
+    promote_champion(
+        registry,
+        model_name="iris_classifier",
+        model_version="2",
+        previous_champion_version="1",
+    )
+
+    assert registry.aliases["Champion"] == "2"
+    assert registry.tags[("2", "smoke_test_status")] == "passed"
+    assert registry.tags[("2", "deployment_status")] == "deployed"
+    assert registry.tags[("2", "lifecycle")] == "champion"
+    assert registry.tags[("1", "lifecycle")] == "previous_champion"
+    assert registry.tags[("1", "deployment_status")] == "superseded"
+
+
+def test_deployment_job_is_created_or_reset_idempotently() -> None:
+    class FakeApiClient:
+        def __init__(self, jobs: list[dict[str, object]]) -> None:
+            self.jobs = jobs
+            self.calls: list[tuple[str, str, dict[str, object]]] = []
+
+        def do(self, method: str, path: str, **kwargs: object) -> dict[str, object]:
+            self.calls.append((method, path, kwargs))
+            if path.endswith("/list"):
+                return {"jobs": self.jobs}
+            if path.endswith("/create"):
+                return {"job_id": 101}
+            return {}
+
+    settings = {"name": "model-deployment", "tasks": []}
+    new_client = FakeApiClient([])
+    existing_client = FakeApiClient(
+        [{"job_id": 77, "settings": {"name": "model-deployment"}}]
+    )
+
+    assert ensure_deployment_job(
+        new_client, job_name="model-deployment", settings=settings
+    ) == ("101", "created")
+    assert ensure_deployment_job(
+        existing_client, job_name="model-deployment", settings=settings
+    ) == ("77", "updated")
+    assert existing_client.calls[-1][1].endswith("/reset")
 
 
 def test_deployment_config_comes_from_versioned_toml(
@@ -195,6 +374,41 @@ def test_local_dataset_matches_feature_contract() -> None:
     }
 
 
+def test_local_environment_example_is_self_consistent() -> None:
+    repository_root = Path(__file__).parents[1]
+    values = {}
+    for line in (
+        (repository_root / "config" / "local.env.example")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ):
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key] = value
+
+    assert values["IRIS_RUNTIME"] == "local"
+    assert values["IRIS_REGISTERED_MODEL_NAME"] == "iris_classifier"
+    assert values["IRIS_DEPLOYMENT_MODEL_NAME"] == "iris_classifier"
+    assert values["IRIS_EXPERIMENT_NAME"] == "iris_mlflow_local"
+
+
+def test_notebooks_are_clean_and_have_cell_ids() -> None:
+    repository_root = Path(__file__).parents[1]
+    notebooks = [
+        *repository_root.glob("*.ipynb"),
+        *(repository_root / "deployment").glob("*.ipynb"),
+        *(repository_root / "tools").glob("*.ipynb"),
+    ]
+
+    for notebook_path in notebooks:
+        notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+        assert all(cell.get("id") for cell in notebook["cells"]), notebook_path
+        for cell in notebook["cells"]:
+            if cell["cell_type"] == "code":
+                assert cell.get("execution_count") is None, notebook_path
+                assert cell.get("outputs") == [], notebook_path
+
+
 def test_local_approval_and_deployment_write_manifest(tmp_path: Path) -> None:
     class FakeRegistry:
         def __init__(self) -> None:
@@ -228,6 +442,8 @@ def test_local_approval_and_deployment_write_manifest(tmp_path: Path) -> None:
     )
 
     assert payload["deployment_skipped"] is True
+    assert payload["rollback_available"] is False
+    assert payload["rollback_status"] == "not_required"
     assert client.aliases["Champion"] == "3"
     assert (
         json.loads((tmp_path / "manifest.json").read_text())["smoke_test"] == "passed"

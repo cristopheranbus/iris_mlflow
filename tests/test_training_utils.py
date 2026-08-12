@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import mlflow
 import numpy as np
 import pandas as pd
 import pytest
@@ -122,8 +123,11 @@ def test_evaluate_model_returns_uniform_metrics() -> None:
 
     assert set(result.metrics) == {
         "accuracy",
+        "precision_macro",
         "precision_weighted",
+        "recall_macro",
         "recall_weighted",
+        "f1_macro",
         "f1_weighted",
     }
     assert result.metrics["accuracy"] == 1.0
@@ -157,7 +161,9 @@ def test_evaluation_tables_have_stable_columns() -> None:
     )
 
 
-def test_mlflow_evaluation_returns_metrics() -> None:
+def test_mlflow_evaluation_returns_metrics(tmp_path: Path) -> None:
+    mlflow.set_tracking_uri(f"sqlite:///{(tmp_path / 'evaluation.db').as_posix()}")
+    mlflow.set_experiment("test_mlflow_evaluation")
     features = pd.DataFrame({"feature": [0.0, 0.1, 1.0, 1.1]})
     target = np.array([0, 0, 1, 1])
     model = DecisionTreeClassifier(random_state=42).fit(features, target)
@@ -215,6 +221,10 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
         assert 'model_type="classifier"' in source
         assert '"label_list": list(range(len(dataset.classes)))' in source
         assert "MODEL_FRAMEWORK = config.model_framework" in source
+        assert "build_probability_metrics" in source
+        assert (
+            '"precision_macro"' not in source
+        )  # La métrica vive en la utilidad común.
 
 
 def test_endpoint_notebook_uses_external_configuration_and_no_token_fallback() -> None:

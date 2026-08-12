@@ -40,10 +40,12 @@ la fuente productiva.
 
 - `random_forest.ipynb`: entrenamiento Random Forest.
 - `xgboost.ipynb`: entrenamiento XGBoost.
+- `docs/training_notebooks.md`: contrato, ejecución y verificación de ambos notebooks.
 - `deployment/evaluate_model.ipynb`: evaluación, gates y artefactos.
 - `deployment/approval.ipynb`: aprobación mediante tag de Unity Catalog.
 - `deployment/deploy_model.ipynb`: Model Serving, smoke test y Champion.
-- `deployment/create_deployment_job.ipynb`: creación y conexión del job.
+- `databricks.yml`: infraestructura declarativa, jobs, permisos y targets.
+- `deployment/create_deployment_job.ipynb`: conexión del job del bundle con el modelo.
 - `tools/src/iris_mlflow_utils`: configuración, evaluación, registry y serving.
 - `config/training.toml`: configuración versionada sin secretos.
 - `tests/`: pruebas unitarias y de integración local.
@@ -58,8 +60,10 @@ la fuente productiva.
 5. Confirmar que el endpoint `iris-classifier` quedó `READY`.
 6. Validar que la versión fue promovida a `Champion`.
 
-El job se crea o conecta ejecutando `deployment/create_deployment_job.ipynb`.
-Configura `IRIS_DEPLOYMENT_CLUSTER_ID` y, en producción, un service principal.
+El job se crea con `databricks bundle deploy`. Después se ejecuta una vez
+`connect_deployment_job` para asociarlo al modelo. Producción exige un service
+principal y aprobación del environment de GitHub. Consulta
+`docs/infrastructure.md`.
 
 ## Calidad
 

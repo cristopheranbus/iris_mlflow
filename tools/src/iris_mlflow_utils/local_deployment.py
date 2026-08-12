@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from .deployment import promote_champion
 
 
 def write_manifest(path: Path, payload: dict[str, Any]) -> Path:
@@ -44,10 +47,21 @@ def simulate_local_deployment(
 
     if not smoke_test_passed:
         raise RuntimeError("El smoke test local falló; Champion no fue actualizado.")
-    registry_client.set_registered_model_alias(
-        name=model_name,
-        alias=champion_alias,
-        version=str(model_version),
+    try:
+        previous_champion_version = str(
+            registry_client.get_model_version_by_alias(model_name, champion_alias).version
+        )
+    except Exception:
+        previous_champion_version = None
+    promote_champion(
+        registry_client,
+        model_name=model_name,
+        model_version=str(model_version),
+        champion_alias=champion_alias,
+        previous_champion_version=previous_champion_version,
+    )
+    registry_client.set_model_version_tag(
+        model_name, str(model_version), "rollback_status", "not_required"
     )
     payload = {
         "runtime": "local",
@@ -57,6 +71,13 @@ def simulate_local_deployment(
         "deployment_skipped": True,
         "smoke_test": "passed",
         "champion_alias": champion_alias,
+        "previous_champion_version": previous_champion_version,
+        "rollback_available": (
+            previous_champion_version is not None
+            and previous_champion_version != str(model_version)
+        ),
+        "rollback_status": "not_required",
+        "promoted_at": datetime.now(UTC).isoformat(),
     }
     write_manifest(manifest_path, payload)
     return payload

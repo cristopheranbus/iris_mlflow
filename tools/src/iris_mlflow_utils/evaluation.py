@@ -17,6 +17,7 @@ from sklearn.metrics import (  # type: ignore[import-untyped]
     average_precision_score,
     classification_report,
     confusion_matrix,
+    log_loss,
     precision_recall_curve,
     precision_recall_fscore_support,
     roc_auc_score,
@@ -46,14 +47,20 @@ def evaluate_model(
     predict_proba = getattr(model, "predict_proba", None)
     if callable(predict_proba):
         probabilities = np.asarray(predict_proba(features))
-    precision, recall, f1, _ = precision_recall_fscore_support(
+    precision_weighted, recall_weighted, f1_weighted, _ = precision_recall_fscore_support(
         target, predictions, average="weighted", zero_division=0
+    )
+    precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
+        target, predictions, average="macro", zero_division=0
     )
     metrics = {
         "accuracy": float(accuracy_score(target, predictions)),
-        "precision_weighted": float(precision),
-        "recall_weighted": float(recall),
-        "f1_weighted": float(f1),
+        "precision_macro": float(precision_macro),
+        "precision_weighted": float(precision_weighted),
+        "recall_macro": float(recall_macro),
+        "recall_weighted": float(recall_weighted),
+        "f1_macro": float(f1_macro),
+        "f1_weighted": float(f1_weighted),
     }
     return EvaluationResult(
         metrics=metrics,
@@ -220,11 +227,13 @@ def build_evaluation_artifacts(
     if probabilities is None or probabilities.shape[1] != len(labels):
         return paths
     binary_target = label_binarize(target, classes=labels)
+    roc_curves: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     figure, axis = plt.subplots(figsize=(7, 6))
     for class_id, class_name in zip(labels, class_names, strict=True):
         false_positive, true_positive, _ = roc_curve(
             binary_target[:, class_id], probabilities[:, class_id]
         )
+        roc_curves[class_id] = (false_positive, true_positive)
         axis.plot(false_positive, true_positive, label=class_name)
     micro_false_positive, micro_true_positive, _ = roc_curve(
         binary_target.ravel(), probabilities.ravel()
@@ -241,12 +250,18 @@ def build_evaluation_artifacts(
     plt.close(figure)
     paths[path.name] = path
 
+    all_false_positive = np.unique(np.concatenate([curve[0] for curve in roc_curves.values()]))
+    mean_true_positive = np.zeros_like(all_false_positive)
+    for false_positive, true_positive in roc_curves.values():
+        mean_true_positive += np.interp(all_false_positive, false_positive, true_positive)
+    mean_true_positive /= len(roc_curves)
+
     figure, axis = plt.subplots(figsize=(7, 6))
-    for class_id, class_name in zip(labels, class_names, strict=True):
-        false_positive, true_positive, _ = roc_curve(
-            binary_target[:, class_id], probabilities[:, class_id]
-        )
-        axis.plot(false_positive, true_positive, label=class_name)
+    axis.plot(
+        all_false_positive,
+        mean_true_positive,
+        label="macro-average",
+    )
     axis.plot(micro_false_positive, micro_true_positive, linestyle="--", label="micro-average")
     axis.plot([0, 1], [0, 1], "k:")
     axis.set(title="ROC macro/micro", xlabel="False Positive Rate", ylabel="True Positive Rate")
@@ -277,7 +292,8 @@ def build_evaluation_artifacts(
     lift.to_json(lift_path, orient="records")
     paths[lift_path.name] = lift_path
     gain = lift.copy()
-    gain["cumulative_gain"] = gain["actual"].cumsum() / max(gain["actual"].sum(), 1)
+    positives_by_class = gain.groupby("class_id")["actual"].transform("sum").clip(lower=1)
+    gain["cumulative_gain"] = gain.groupby("class_id")["actual"].cumsum() / positives_by_class
     gain_path = output_dir / "cumulative_gain_data.json"
     gain.to_json(gain_path, orient="records")
     paths[gain_path.name] = gain_path
@@ -297,10 +313,19 @@ def build_evaluation_artifacts(
         plt.close(figure)
         paths[filename] = path
     macro_path = output_dir / "lift_curve_macro.json"
-    lift.groupby("population_fraction", as_index=False)["lift"].mean().to_json(
-        macro_path, orient="records"
-    )
+    macro_lift = lift.groupby("population_fraction", as_index=False)["lift"].mean()
+    macro_lift.to_json(macro_path, orient="records")
     paths[macro_path.name] = macro_path
+    figure, axis = plt.subplots(figsize=(7, 6))
+    axis.plot(macro_lift["population_fraction"], macro_lift["lift"], label="macro-average")
+    axis.axhline(1.0, color="black", linestyle=":", label="baseline")
+    axis.set(title="Lift macro", xlabel="Fracción de población", ylabel="lift")
+    axis.legend()
+    path = output_dir / "lift_curve_macro.png"
+    figure.tight_layout()
+    figure.savefig(path, dpi=140)
+    plt.close(figure)
+    paths[path.name] = path
 
     figure, axis = plt.subplots(figsize=(7, 5))
     axis.hist(np.max(probabilities, axis=1), bins=10, alpha=0.8)
@@ -344,6 +369,7 @@ def build_probability_metrics(
         return {}
     binary_target = label_binarize(target, classes=labels)
     return {
+        "log_loss": float(log_loss(target, result.probabilities, labels=labels)),
         "roc_auc_ovr_macro": float(
             roc_auc_score(binary_target, result.probabilities, multi_class="ovr", average="macro")
         ),
