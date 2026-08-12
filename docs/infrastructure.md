@@ -107,14 +107,14 @@ workspace. Un account admin debe crear una política para cada environment con:
 ```text
 Issuer: https://token.actions.githubusercontent.com
 Subject claim: sub
-Audience: <databricks-account-id>
+Audience: valor exacto del claim `aud` emitido por GitHub
 ```
 
 Subjects exactos para este repositorio:
 
 ```text
-repo:cristopheranbus/iris_mlflow:environment:databricks-dev
-repo:cristopheranbus/iris_mlflow:environment:databricks-production
+repo:cristopheranbus@6538839/iris_mlflow@1318684974:environment:databricks-dev
+repo:cristopheranbus@6538839/iris_mlflow@1318684974:environment:databricks-production
 ```
 
 Ejemplo con un perfil de administrador de cuenta:
@@ -126,8 +126,8 @@ databricks account service-principal-federation-policy create `
   --json '{
     "oidc_policy": {
       "issuer": "https://token.actions.githubusercontent.com",
-      "audiences": ["<databricks-account-id>"],
-      "subject": "repo:cristopheranbus/iris_mlflow:environment:databricks-dev"
+      "audiences": ["https://dbc-f2dbc696-258a.cloud.databricks.com/oidc/v1/token"],
+      "subject": "repo:cristopheranbus@6538839/iris_mlflow@1318684974:environment:databricks-dev"
     }
   }'
 ```
@@ -162,3 +162,40 @@ Para producción ejecuta manualmente el workflow desde `main`, selecciona
 Si aparece un error de OIDC, comprueba primero que el nombre del environment y
 el subject sean idénticos, incluida la capitalización. El workflow ya solicita
 `id-token: write` y usa `DATABRICKS_AUTH_TYPE=github-oidc`.
+
+En organizaciones con identificadores administrados, GitHub puede incluir IDs
+numericos en el claim `sub`. Por eso la politica debe copiar el valor real del
+token y no reconstruirlo a partir del nombre visible del repositorio.
+
+### Diagnostico de despliegue
+
+Si la validacion OIDC pasa pero Jobs responde `Organization ... has been
+cancelled or is not active yet`, la federacion ya funciona. Verifica el estado
+de suscripcion o facturacion de la cuenta Databricks antes de ampliar permisos.
+Los principals de CI deben conservar como minimo `workspace-access`; no
+necesitan privilegios de account admin.
+
+#### Estado de la cuenta de desarrollo (12 de agosto de 2026)
+
+La autenticacion OIDC y `databricks bundle validate` estan operativos. El
+despliegue esta bloqueado en la cuenta, tanto con el service principal como con
+el usuario administrador, por esta respuesta de Jobs API:
+
+```text
+Organization 7474648951266353 has been cancelled or is not active yet.
+```
+
+La cuenta fue creada el 27 de julio de 2026 y el trial de Databricks dura 14
+dias. Para habilitar nuevamente la creacion de Jobs:
+
+1. Abrir `https://accounts.cloud.databricks.com` con un account admin.
+2. Ir a **Settings -> Subscription & billing**.
+3. Agregar una tarjeta o vincular AWS Marketplace para pasar a pago por uso.
+4. En **Settings -> Feature enablement**, aceptar los terminos de serverless si
+   aparece la solicitud.
+5. En GitHub, abrir la ejecucion fallida y seleccionar **Re-run failed jobs**.
+
+Si el plan aparece como `Cancelled` y no solamente como trial vencido,
+Databricks no permite reactivarlo: se debe contactar al equipo de cuenta o
+crear una cuenta nueva y actualizar `DATABRICKS_HOST`, las identidades y las
+politicas OIDC de ambos environments.
