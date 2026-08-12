@@ -1,13 +1,26 @@
 # Rollback
 
-1. Identificar la versión anterior en el Activity Log o en el historial del
-   endpoint.
-2. Ejecutar una actualización de Model Serving apuntando a esa versión exacta.
-3. Esperar estado `READY`.
-4. Ejecutar el smoke test.
-5. Mover el alias `Champion` a la versión restaurada.
-6. Registrar causa, versión retirada, versión restaurada y resultado de la
-   inferencia.
+El notebook de despliegue captura las entidades servidas y la configuración de
+tráfico antes de modificar el endpoint. Si falla la espera de `READY` o el smoke
+test, restaura ese snapshot, vuelve a esperar `READY` y deja `Champion` sin
+cambios.
 
-No se eliminan versiones de Unity Catalog durante un rollback. Si el endpoint
-no queda listo, se conserva la configuración anterior y se escala el incidente.
+Tags de evidencia en la versión candidata:
+
+- `deployment_status=failed`.
+- `smoke_test_status=failed`.
+- `rollback_status=restored` si la restauración terminó correctamente.
+- `rollback_status=failed` si también falló la restauración.
+
+Ante `rollback_status=failed`:
+
+1. Detener nuevas promociones.
+2. Identificar la versión anterior en el alias `Champion` y en el historial del endpoint.
+3. Actualizar Model Serving a la versión exacta o configuración anterior.
+4. Esperar estado `READY` y ejecutar el smoke test.
+5. Confirmar que `Champion` sigue apuntando a la versión estable.
+6. Registrar causa, versión retirada, versión restaurada y respuesta de inferencia.
+
+No se eliminan versiones de Unity Catalog durante un rollback. La promoción del
+alias ocurre sólo después del smoke test, por lo que un rollback normal no
+requiere mover `Champion`.

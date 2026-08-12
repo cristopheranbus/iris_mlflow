@@ -8,10 +8,6 @@
 [runtime]
 mode = "auto"
 
-La URI local `sqlite:///mlflow.db` se canoniza a la raíz del proyecto, así que
-los notebooks y la UI usan la misma base aunque se ejecuten desde `tools` o
-desde la raíz.
-
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
 tracking_uri = "sqlite:///mlflow.db"
@@ -23,6 +19,10 @@ feature_table = "workspace.default.iris_features"
 registered_model_name = "workspace.default.iris_classifier"
 registry_uri = "databricks-uc"
 ```
+
+La URI local `sqlite:///mlflow.db` se canoniza a la raíz del proyecto, así que
+los notebooks y la UI usan la misma base aunque se ejecuten desde `tools` o
+desde la raíz.
 
 La precedencia del runtime es `IRIS_RUNTIME`, luego `dbutils`, luego
 `DATABRICKS_RUNTIME_VERSION` y finalmente `local`. Variables locales
@@ -45,7 +45,7 @@ La sección `[deployment]` define:
 - `required_approval_tag`.
 - Aliases Champion y Challenger.
 - Timeout y polling de Model Serving.
-- Nombre y ruta raíz del Deployment Job.
+- Nombre del Deployment Job. Las rutas y el cómputo pertenecen al bundle.
 
 Los únicos parámetros dinámicos del job son `model_name` y `model_version`.
 
@@ -58,11 +58,12 @@ IRIS_MIN_TEST_F1_WEIGHTED
 IRIS_MIN_TEST_ACCURACY
 IRIS_MAX_METRIC_REGRESSION
 IRIS_REQUIRED_APPROVAL_TAG
-IRIS_DEPLOYMENT_CLUSTER_ID
-IRIS_DEPLOYMENT_SERVICE_PRINCIPAL
-IRIS_DEPLOYMENT_NOTEBOOK_ROOT
 IRIS_DEPLOYMENT_JOB_NAME
 ```
+
+La identidad de producción y el grupo operador se inyectan como variables del
+bundle (`BUNDLE_VAR_production_service_principal` y
+`BUNDLE_VAR_operators_group`). No se fija un cluster: las tareas usan serverless.
 
 Tokens y credenciales deben resolverse con Databricks Secrets o la identidad
 administrada del job. Nunca se guardan en TOML, notebooks, tags o mensajes de

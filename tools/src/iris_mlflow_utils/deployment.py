@@ -35,6 +35,72 @@ class PromotionDecision:
         }
 
 
+@dataclass(frozen=True)
+class ServingEndpointSnapshot:
+    """Configuration required to restore an endpoint after a failed rollout."""
+
+    endpoint_name: str
+    served_entities: list[dict[str, Any]]
+    traffic_config: dict[str, Any] | None = None
+
+
+def _as_dictionary(value: Any) -> dict[str, Any]:
+    """Convert SDK models or dictionaries into API-compatible dictionaries."""
+
+    if isinstance(value, dict):
+        return dict(value)
+    as_dict = getattr(value, "as_dict", None)
+    if callable(as_dict):
+        return dict(as_dict())
+    raise TypeError(f"No se puede serializar la configuración de serving: {value!r}")
+
+
+def capture_serving_endpoint(
+    workspace_client: Any,
+    endpoint_name: str,
+) -> ServingEndpointSnapshot:
+    """Capture the active endpoint configuration before changing it."""
+
+    endpoint = workspace_client.serving_endpoints.get(endpoint_name)
+    endpoint_config = (
+        endpoint.get("config") if isinstance(endpoint, dict) else getattr(endpoint, "config", None)
+    )
+    if endpoint_config is None:
+        raise RuntimeError(f"El endpoint {endpoint_name} no expone una configuración restaurable.")
+    served_entities = (
+        endpoint_config.get("served_entities", [])
+        if isinstance(endpoint_config, dict)
+        else getattr(endpoint_config, "served_entities", [])
+    )
+    if not served_entities:
+        raise RuntimeError(f"El endpoint {endpoint_name} no contiene entidades servidas.")
+    traffic_config = (
+        endpoint_config.get("traffic_config")
+        if isinstance(endpoint_config, dict)
+        else getattr(endpoint_config, "traffic_config", None)
+    )
+    return ServingEndpointSnapshot(
+        endpoint_name=endpoint_name,
+        served_entities=[_as_dictionary(entity) for entity in served_entities],
+        traffic_config=None if traffic_config is None else _as_dictionary(traffic_config),
+    )
+
+
+def restore_serving_endpoint(
+    workspace_client: Any,
+    snapshot: ServingEndpointSnapshot,
+) -> Any:
+    """Restore a previously captured Model Serving configuration."""
+
+    request: dict[str, Any] = {
+        "name": snapshot.endpoint_name,
+        "served_entities": snapshot.served_entities,
+    }
+    if snapshot.traffic_config is not None:
+        request["traffic_config"] = snapshot.traffic_config
+    return workspace_client.serving_endpoints.update_config(**request)
+
+
 def evaluate_promotion_gate(
     metrics: dict[str, float],
     champion_metrics: dict[str, float] | None,
@@ -125,9 +191,52 @@ def promote_champion(
     model_name: str,
     model_version: str,
     champion_alias: str = "Champion",
+    previous_champion_version: str | None = None,
 ) -> None:
-    """Promote an exact version after serving smoke tests have passed."""
+    """Promote an exact version and persist consistent lifecycle evidence."""
 
+    registry_client.set_model_version_tag(
+        model_name, str(model_version), "smoke_test_status", "passed"
+    )
+    registry_client.set_model_version_tag(
+        model_name, str(model_version), "deployment_status", "deployed"
+    )
     registry_client.set_registered_model_alias(
         name=model_name, alias=champion_alias, version=str(model_version)
     )
+    registry_client.set_model_version_tag(model_name, str(model_version), "lifecycle", "champion")
+    if previous_champion_version and str(previous_champion_version) != str(model_version):
+        registry_client.set_model_version_tag(
+            model_name, str(previous_champion_version), "lifecycle", "previous_champion"
+        )
+        registry_client.set_model_version_tag(
+            model_name, str(previous_champion_version), "deployment_status", "superseded"
+        )
+
+
+def ensure_deployment_job(
+    api_client: Any,
+    *,
+    job_name: str,
+    settings: dict[str, Any],
+) -> tuple[str, str]:
+    """Create or reset one exact-name job without producing duplicates."""
+
+    response = api_client.do("GET", "/api/2.1/jobs/list", query={"name": job_name})
+    jobs = [
+        job for job in response.get("jobs", []) if job.get("settings", {}).get("name") == job_name
+    ]
+    if len(jobs) > 1:
+        raise RuntimeError(
+            f"Existen varios jobs llamados {job_name}; resuelve la duplicidad primero."
+        )
+    if jobs:
+        job_id = str(jobs[0]["job_id"])
+        api_client.do(
+            "POST",
+            "/api/2.1/jobs/reset",
+            body={"job_id": int(job_id), "new_settings": settings},
+        )
+        return job_id, "updated"
+    created = api_client.do("POST", "/api/2.1/jobs/create", body=settings)
+    return str(created["job_id"]), "created"

@@ -15,10 +15,11 @@
 
 ## Crear o reconectar el job
 
-Ejecutar `deployment/create_deployment_job.ipynb` como administrador. Configurar
-`IRIS_DEPLOYMENT_CLUSTER_ID`, `IRIS_DEPLOYMENT_NOTEBOOK_ROOT` y el service
-principal de producción. El job usa `model_name` y `model_version` como
-parámetros de nivel de job y limita la concurrencia a una ejecución.
+Validar y desplegar `databricks.yml`; no crear el job manualmente desde un
+notebook. Luego ejecutar el recurso `connect_deployment_job`, que recibe el ID
+real mediante referencia del bundle y lo registra como `deployment_job_id` del
+modelo. El job usa `model_name` y `model_version`, concurrencia `1`, serverless y
+cero reintentos en aprobación. Consulta `docs/infrastructure.md`.
 
 ## Diagnóstico
 
@@ -28,6 +29,8 @@ parámetros de nivel de job y limita la concurrencia a una ejecución.
 - Si falla aprobación, confirmar el tag exacto `Approval_Check=Approved`.
 - Si falla serving, revisar permisos del service principal, endpoint y logs.
 - Si falla el smoke test, no promover `Champion`.
+- Si el endpoint ya fue actualizado y falla `READY` o el smoke test, comprobar
+  `rollback_status=restored`. Un valor `failed` requiere intervención inmediata.
 
 ## Despliegue manual
 
@@ -37,10 +40,19 @@ Se puede ejecutar el job desde Jobs o desde la página de la versión, indicando
 ## Prueba local
 
 Configura `IRIS_RUNTIME=local`, ejecuta un notebook de entrenamiento y luego,
-en orden, `evaluate_model.ipynb`, `approval.ipynb`, `deploy_model.ipynb` y
-`create_deployment_job.ipynb`. Con `IRIS_LOCAL_AUTO_APPROVE=true` la aprobación
+en orden, `evaluate_model.ipynb`, `approval.ipynb` y `deploy_model.ipynb`.
+`create_deployment_job.ipynb` sólo genera el manifiesto del DAG local. Con
+`IRIS_LOCAL_AUTO_APPROVE=true` la aprobación
 se registra automáticamente después de superar los gates. El despliegue local
 es un smoke test y genera un manifiesto, no un endpoint.
+
+La evaluación se registra en el mismo experimento que el entrenamiento. La
+versión conserva `evaluation_run_id` y `evaluation_model_id` para enlazar las
+métricas y artefactos con el modelo evaluado.
+
+Una promoción exitosa registra `smoke_test_status=passed`,
+`deployment_status=deployed` y `lifecycle=champion`. La versión Champion anterior
+queda como `lifecycle=previous_champion` y `deployment_status=superseded`.
 
 En Databricks configura `IRIS_RUNTIME=databricks` y usa los parámetros
 `model_name` y `model_version`; ese es el único flujo productivo y actualiza

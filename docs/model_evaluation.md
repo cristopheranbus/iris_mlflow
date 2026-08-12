@@ -21,3 +21,13 @@ El gate inicial exige `test_f1_weighted >= 0.90`,
 Los artefactos de evaluación se generan con la misma utilidad en modo local y
 Databricks: matriz de confusión, ROC, Precision-Recall, lift, cumulative gain,
 probabilidades, importancia de variables, predicciones y esquemas.
+
+Las métricas canónicas comunes a Random Forest y XGBoost incluyen accuracy,
+precision, recall y F1 macro/weighted, además de log loss, ROC-AUC OvR y average
+precision. Las métricas adicionales del evaluador de cada framework no forman
+parte del contrato usado por los gates.
+
+El run de evaluación se crea en el experimento configurado y su identificador
+queda guardado como `evaluation_run_id` en la versión. Cuando MLflow expone un
+`model_id`, las métricas también se registran contra ese Logged Model para que
+sean visibles desde la versión registrada.
