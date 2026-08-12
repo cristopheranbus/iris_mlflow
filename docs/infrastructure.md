@@ -10,8 +10,8 @@ permisos y los targets `dev` y `prod`.
   `deploy_model`. Usa cómputo serverless al no fijar un cluster.
 - `connect_deployment_job`: conecta una vez el ID del job anterior con el
   modelo registrado. No crea ni modifica la definición del job.
-- `iris_mlflow_tools`: construye el wheel de `tools/` y lo instala en cada
-  tarea.
+- `iris_mlflow_tools`: construye el wheel de `tools/` y lo instala mediante un
+  environment serverless compartido por las tareas.
 
 El job admite sólo estos parámetros dinámicos:
 

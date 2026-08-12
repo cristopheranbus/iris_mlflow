@@ -40,18 +40,24 @@ resources:
           default: ${var.registered_model_name}
         - name: model_version
           default: ""
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ${workspace.file_path}/tools/dist/*.whl
       tasks:
         - task_key: evaluate_model
+          environment_key: default
           notebook_task:
             notebook_path: ./deployment/evaluate_model.ipynb
             base_parameters:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
             source: WORKSPACE
-          libraries:
-            - whl: ./tools/dist/*.whl
 
         - task_key: Approval_Check
+          environment_key: default
           depends_on:
             - task_key: evaluate_model
           max_retries: 0
@@ -61,10 +67,9 @@ resources:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
             source: WORKSPACE
-          libraries:
-            - whl: ./tools/dist/*.whl
 
         - task_key: deploy_model
+          environment_key: default
           depends_on:
             - task_key: Approval_Check
           notebook_task:
@@ -73,23 +78,26 @@ resources:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
             source: WORKSPACE
-          libraries:
-            - whl: ./tools/dist/*.whl
 
     connect_deployment_job:
       name: ${var.deployment_job_name}-connect
       description: Conecta el job administrado por el bundle con el modelo registrado.
       max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ${workspace.file_path}/tools/dist/*.whl
       tasks:
         - task_key: connect_deployment_job
+          environment_key: default
           notebook_task:
             notebook_path: ./deployment/create_deployment_job.ipynb
             base_parameters:
               model_name: ${var.registered_model_name}
               deployment_job_id: ${resources.jobs.model_deployment.id}
             source: WORKSPACE
-          libraries:
-            - whl: ./tools/dist/*.whl
 
 targets:
   dev:
