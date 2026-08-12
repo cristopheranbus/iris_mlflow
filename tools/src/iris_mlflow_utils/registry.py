@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import mlflow
 from mlflow import MlflowClient
 
 from .config import TrainingConfig
@@ -14,6 +15,27 @@ def build_registry_client(registry_uri: str = "databricks-uc") -> MlflowClient:
     """Create an MLflow client explicitly bound to the Unity Catalog registry."""
 
     return MlflowClient(registry_uri=registry_uri)
+
+
+def ensure_mlflow_experiment(
+    experiment_name: str,
+    *,
+    tracking_uri: str | None = None,
+) -> str:
+    """Create or restore an MLflow experiment before selecting it."""
+
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient(tracking_uri=tracking_uri) if tracking_uri else MlflowClient()
+    experiment = client.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        experiment_id = client.create_experiment(experiment_name)
+    else:
+        experiment_id = experiment.experiment_id
+        if experiment.lifecycle_stage != "active":
+            client.restore_experiment(experiment_id)
+    mlflow.set_experiment(experiment_id=experiment_id)
+    return str(experiment_id)
 
 
 def _descriptions(config: TrainingConfig, *, version: str, run_id: str) -> tuple[str, str]:

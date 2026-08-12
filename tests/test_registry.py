@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+import mlflow
 from iris_mlflow_utils.config import TrainingConfig
-from iris_mlflow_utils.registry import synchronize_model_registry_metadata
+from iris_mlflow_utils.registry import (
+    ensure_mlflow_experiment,
+    synchronize_model_registry_metadata,
+)
 
 
 class FakeModelVersion:
@@ -95,3 +100,19 @@ def test_registry_metadata_sets_model_type_tags_and_descriptions() -> None:
     assert client.model.tags["model_type"] == "xgboost"
     assert client.version.description
     assert client.model.description
+
+
+def test_ensure_mlflow_experiment_restores_deleted_experiment(tmp_path: Path) -> None:
+    database_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    experiment_id = ensure_mlflow_experiment(
+        "iris_mlflow_local", tracking_uri=database_uri
+    )
+    client = mlflow.MlflowClient(tracking_uri=database_uri)
+    client.delete_experiment(experiment_id)
+
+    restored_id = ensure_mlflow_experiment(
+        "iris_mlflow_local", tracking_uri=database_uri
+    )
+
+    assert restored_id == experiment_id
+    assert client.get_experiment(experiment_id).lifecycle_stage == "active"

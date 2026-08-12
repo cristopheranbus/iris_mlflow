@@ -8,6 +8,10 @@
 [runtime]
 mode = "auto"
 
+La URI local `sqlite:///mlflow.db` se canoniza a la raíz del proyecto, así que
+los notebooks y la UI usan la misma base aunque se ejecuten desde `tools` o
+desde la raíz.
+
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
 tracking_uri = "sqlite:///mlflow.db"

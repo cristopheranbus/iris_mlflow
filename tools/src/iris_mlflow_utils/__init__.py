@@ -45,6 +45,7 @@ from .local_deployment import (  # noqa: E402
 )
 from .registry import (  # noqa: E402
     build_registry_client,
+    ensure_mlflow_experiment,
     synchronize_model_registry_metadata,
 )
 from .runtime import (  # noqa: E402
@@ -80,6 +81,7 @@ __all__ = [
     "evaluate_train_test",
     "ensure_feature_table",
     "build_registry_client",
+    "ensure_mlflow_experiment",
     "synchronize_model_registry_metadata",
     "DatabricksEndpointError",
     "build_invocation_url",
