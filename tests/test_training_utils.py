@@ -209,6 +209,11 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
         assert "IRIS_XGBOOST_REGISTERED_MODEL" not in widget_names
 
         assert "MODEL_TYPE = config.model_type" in source
+        assert 'astype("float64")' in source
+        assert "CONDA_ENV" in source
+        assert '"pip": PIP_REQUIREMENTS' in source
+        assert 'model_type="classifier"' in source
+        assert '"label_list": list(range(len(dataset.classes)))' in source
         assert "MODEL_FRAMEWORK = config.model_framework" in source
 
 
@@ -250,6 +255,20 @@ def test_build_config_exposes_training_parameters(
     assert config.model_framework == "sklearn"
     assert config.model_params["n_estimators"] == 100
     assert config.feature_table_version == ""
+
+
+def test_local_mlflow_uris_are_canonical_from_any_working_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IRIS_RUNTIME", "local")
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_REGISTRY_URI", raising=False)
+    config = build_config(model_slug="random_forest")
+
+    project_root = Path(__file__).parents[1].resolve().as_posix()
+    expected = f"sqlite:///{project_root}/mlflow.db"
+    assert config.tracking_uri == expected
+    assert config.registry_uri == expected
 
 
 def test_training_config_rejects_invalid_model_name() -> None:

@@ -12,6 +12,7 @@ __pycache__/
 # Local MLflow tracking and generated reports
 mlruns/
 mlflow.db
+local_backups/
 artifacts/
 .coverage
 htmlcov/

@@ -5,6 +5,9 @@ Unity Catalog ni Model Serving.
 
 ## Instalación
 
+La base local canónica es `<raiz-del-proyecto>/mlflow.db`; la configuración la
+resuelve de forma absoluta para evitar duplicados por directorio de ejecución.
+
 Desde `tools` instala las dependencias con `uv sync` y ejecuta los notebooks
 con Jupyter. El dataset de desarrollo está en
 `data/local/iris_features.csv` y conserva el mismo contrato de columnas que la

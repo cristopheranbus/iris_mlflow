@@ -294,9 +294,15 @@ def build_config(
             ),
         ),
         artifact_location=setting("IRIS_ARTIFACT_LOCATION", ""),
-        tracking_uri=setting("MLFLOW_TRACKING_URI", runtime_config.get("tracking_uri", "")),
-        registry_uri=setting(
-            "MLFLOW_REGISTRY_URI", runtime_config.get("registry_uri", "databricks-uc")
+        tracking_uri=_runtime_mlflow_uri(
+            setting("MLFLOW_TRACKING_URI", runtime_config.get("tracking_uri", "")),
+            runtime_mode=runtime_mode,
+            project_root=config_root,
+        ),
+        registry_uri=_runtime_mlflow_uri(
+            setting("MLFLOW_REGISTRY_URI", runtime_config.get("registry_uri", "databricks-uc")),
+            runtime_mode=runtime_mode,
+            project_root=config_root,
         ),
         registered_model_name=setting(
             "IRIS_REGISTERED_MODEL_NAME", runtime_config.get("registered_model_name", default_name)
@@ -394,3 +400,15 @@ def _resolve_project_path(value: str, project_root: Path) -> Path:
 
     candidate = Path(value).expanduser()
     return candidate if candidate.is_absolute() else (project_root / candidate).resolve()
+
+
+def _runtime_mlflow_uri(value: str, *, runtime_mode: RuntimeMode, project_root: Path) -> str:
+    """Canonicalize local SQLite URIs relative to the repository root."""
+
+    if runtime_mode != "local" or not value.startswith("sqlite:///"):
+        return value
+    database_path = value.removeprefix("sqlite:///")
+    path = Path(database_path)
+    if not path.is_absolute():
+        path = (project_root / path).resolve()
+    return f"sqlite:///{path.as_posix()}"
