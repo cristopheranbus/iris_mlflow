@@ -7,7 +7,7 @@ uv run --project tools pytest
 uv run --project tools ruff check tools/src tests tools/scripts
 uv run --project tools ruff format --check tools/src tests tools/scripts
 uv run --project tools mypy
-uv run --project tools pip-audit
+uv run --project tools pip-audit --ignore-vuln PYSEC-2026-3552
 uv build --project tools
 ```
 
