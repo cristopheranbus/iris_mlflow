@@ -10,7 +10,13 @@ Paquete reutilizable para los notebooks Iris.
 - `evaluation.py`: métricas y tablas de evaluación.
 - `feature_table.py`: bootstrap explícito de tablas Unity Catalog.
 - `registry.py`: tags, comentarios, aliases y verificación.
+- `deployment.py`: gates, create/update de endpoints y rollback transaccional.
+- `local_deployment.py`: aprobación y despliegue local simulado.
+- `runtime.py`: detección local/Databricks y parámetros dinámicos.
 - `serving.py`: cliente REST testeable para Model Serving.
+
+`scripts/databricks_preflight.py` valida identidad y permisos antes del bundle.
+`scripts/bootstrap_databricks_permissions.ps1` aplica grants de Unity Catalog.
 
 ## Pruebas
 

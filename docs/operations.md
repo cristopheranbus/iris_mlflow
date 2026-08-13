@@ -10,7 +10,7 @@
 6. Esperar el Deployment Job.
 7. Usar el botón **Approve** en la versión del modelo; esto aplica
    `Approval_Check=Approved`.
-8. Confirmar endpoint `iris-classifier` en estado `READY`.
+8. Confirmar `iris-classifier-dev` en desarrollo o `iris-classifier` en producción.
 9. Confirmar alias `Champion` y Activity Log.
 
 ## Crear o reconectar el job
@@ -25,12 +25,15 @@ cero reintentos en aprobación. Consulta `docs/infrastructure.md`.
 
 - Si no hay trigger, revisar `deployment_job_id`, permisos y modelo de tres
   niveles.
+- Si falla el preflight, no desplegar: corregir cuenta, identidad o grants.
 - Si falla evaluación, revisar `evaluation_decision` y los artefactos.
 - Si falla aprobación, confirmar el tag exacto `Approval_Check=Approved`.
 - Si falla serving, revisar permisos del service principal, endpoint y logs.
 - Si falla el smoke test, no promover `Champion`.
 - Si el endpoint ya fue actualizado y falla `READY` o el smoke test, comprobar
   `rollback_status=restored`. Un valor `failed` requiere intervención inmediata.
+- En el primer despliegue fallido, comprobar
+  `rollback_status=deleted_new_endpoint`; el endpoint incompleto se elimina.
 
 ## Despliegue manual
 
@@ -47,8 +50,9 @@ se registra automáticamente después de superar los gates. El despliegue local
 es un smoke test y genera un manifiesto, no un endpoint.
 
 La evaluación se registra en el mismo experimento que el entrenamiento. La
-versión conserva `evaluation_run_id` y `evaluation_model_id` para enlazar las
-métricas y artefactos con el modelo evaluado.
+versión conserva `feature_table_version`, `evaluation_run_id`,
+`comparison_run_id` y `evaluation_model_id` para enlazar dataset, métricas,
+comparación y artefactos con el modelo evaluado.
 
 Una promoción exitosa registra `smoke_test_status=passed`,
 `deployment_status=deployed` y `lifecycle=champion`. La versión Champion anterior

@@ -5,9 +5,6 @@
 `config/training.toml` separa la configuración local de la productiva:
 
 ```toml
-[runtime]
-mode = "auto"
-
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
 tracking_uri = "sqlite:///mlflow.db"
@@ -45,9 +42,10 @@ La sección `[deployment]` define:
 - `required_approval_tag`.
 - Aliases Champion y Challenger.
 - Timeout y polling de Model Serving.
-- Nombre del Deployment Job. Las rutas y el cómputo pertenecen al bundle.
+- El nombre del job y el endpoint por ambiente pertenecen al bundle.
 
-Los únicos parámetros dinámicos del job son `model_name` y `model_version`.
+Los parámetros dinámicos son `model_name` y `model_version`. `endpoint_name`
+es un valor estático inyectado por el target del bundle para aislar ambientes.
 
 Overrides permitidos:
 
@@ -58,7 +56,6 @@ IRIS_MIN_TEST_F1_WEIGHTED
 IRIS_MIN_TEST_ACCURACY
 IRIS_MAX_METRIC_REGRESSION
 IRIS_REQUIRED_APPROVAL_TAG
-IRIS_DEPLOYMENT_JOB_NAME
 ```
 
 La identidad de producción y el grupo operador se inyectan como variables del

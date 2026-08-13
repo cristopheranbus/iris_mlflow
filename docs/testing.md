@@ -1,15 +1,19 @@
 # Pruebas
 
-Desde `tools`:
+Desde la raíz del proyecto:
 
 ```powershell
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv build
+uv run --project tools pytest
+uv run --project tools ruff check tools/src tests tools/scripts
+uv run --project tools ruff format --check tools/src tests tools/scripts
+uv run --project tools mypy
+uv run --project tools pip-audit
+uv build --project tools
 ```
 
-Las pruebas unitarias no requieren Databricks. Las pruebas de integración
-locales pueden usar MLflow local. La ejecución real de notebooks sigue siendo
-una validación de integración dependiente de cluster, permisos y secretos.
+La suite exige al menos 85% de cobertura. Las pruebas unitarias y las ejecuciones
+locales de MLflow no requieren Databricks. La validación cloud usa cómputo serverless
+y requiere cuenta activa, OIDC, modelos y permisos; el proyecto no configura clusters.
+
+GitHub ejecuta además un escaneo de secretos sobre el historial completo. Los notebooks
+deben conservar `execution_count=null` y no guardar outputs.

@@ -6,7 +6,7 @@ y promoverlos de forma controlada a Model Serving.
 ## Flujo
 
 ```text
-workspace.default.iris_features -> entrenamiento -> Challenger
+workspace.default.iris_features@version -> entrenamiento -> Challenger
                                       -> evaluación y artefactos
                                       -> aprobación manual
                                       -> Model Serving -> Champion
@@ -67,7 +67,7 @@ la fuente productiva.
 | [`tools/src/iris_mlflow_utils/feature_table.py`](tools/src/iris_mlflow_utils/feature_table.py) | Contiene utilidades explícitas de preparación de la tabla de features fuera del flujo normal. |
 | [`tools/src/iris_mlflow_utils/evaluation.py`](tools/src/iris_mlflow_utils/evaluation.py) | Calcula métricas y genera matrices, ROC, Precision-Recall, lift, gain y demás artefactos. |
 | [`tools/src/iris_mlflow_utils/registry.py`](tools/src/iris_mlflow_utils/registry.py) | Gestiona MLflow Registry, versiones, tags, descripciones y aliases. |
-| [`tools/src/iris_mlflow_utils/deployment.py`](tools/src/iris_mlflow_utils/deployment.py) | Implementa gates, comparación contra `Champion` y decisiones de promoción. |
+| [`tools/src/iris_mlflow_utils/deployment.py`](tools/src/iris_mlflow_utils/deployment.py) | Implementa gates, create/update del endpoint, rollback y promoción posterior al smoke test. |
 | [`tools/src/iris_mlflow_utils/serving.py`](tools/src/iris_mlflow_utils/serving.py) | Construye payloads, administra el endpoint y ejecuta verificaciones de inferencia. |
 | [`tools/src/iris_mlflow_utils/local_deployment.py`](tools/src/iris_mlflow_utils/local_deployment.py) | Simula aprobación y despliegue local, y genera manifiestos auditables. |
 | [`tools/src/iris_mlflow_utils/__init__.py`](tools/src/iris_mlflow_utils/__init__.py) | Expone la interfaz pública del paquete compartido. |
@@ -89,6 +89,9 @@ la fuente productiva.
 | [`databricks.yml`](databricks.yml) | Declara wheel, notebooks, Jobs, environments serverless, permisos y targets `dev`/`prod`. |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Ejecuta tests, lint, formato, tipos y build en GitHub Actions. |
 | [`.github/workflows/databricks-bundle.yml`](.github/workflows/databricks-bundle.yml) | Valida el bundle y despliega a Databricks cuando el interruptor operativo está habilitado. |
+| [`.github/workflows/security.yml`](.github/workflows/security.yml) | Escanea el historial para impedir la publicación de secretos. |
+| [`tools/scripts/databricks_preflight.py`](tools/scripts/databricks_preflight.py) | Verifica cuenta, identidad, tabla, modelo y grants antes del despliegue. |
+| [`tools/scripts/bootstrap_databricks_permissions.ps1`](tools/scripts/bootstrap_databricks_permissions.ps1) | Aplica permisos mínimos de Unity Catalog con una identidad administradora. |
 
 ### Pruebas automatizadas
 
@@ -124,12 +127,13 @@ la fuente productiva.
 2. Revisar la versión `Challenger`.
 3. Revisar métricas y artefactos.
 4. Aprobar aplicando `Approval_Check=Approved`.
-5. Confirmar que el endpoint `iris-classifier` quedó `READY`.
+5. Confirmar que `iris-classifier-dev` o `iris-classifier` quedó `READY`.
 6. Validar que la versión fue promovida a `Champion`.
 
 El job se crea con `databricks bundle deploy`. Después se ejecuta una vez
-`connect_deployment_job` para asociarlo al modelo. Producción exige un service
-principal y aprobación del environment de GitHub. Consulta
+`connect_deployment_job` para asociarlo al modelo. Desarrollo y producción usan
+modelos, jobs y endpoints separados. Producción exige `main`, ejecución manual,
+service principal y aprobación del environment de GitHub. Consulta
 [Infraestructura y CI/CD](docs/infrastructure.md).
 
 ## Calidad

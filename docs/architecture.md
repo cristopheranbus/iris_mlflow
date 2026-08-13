@@ -35,7 +35,7 @@ flowchart LR
 flowchart LR
     A{Runtime} -->|Databricks| B[Tabla Delta iris_features]
     A -->|Local| L[CSV de desarrollo]
-    B --> C[Entrenamiento Spark MLflow UC]
+    B --> C[Entrenamiento con snapshot Delta]
     L --> M[Entrenamiento local MLflow SQLite]
     C --> N[Challenger]
     M --> N
@@ -51,6 +51,11 @@ flowchart LR
     J -->|éxito| K[Alias Champion]
 ```
 
+En Databricks, `dev` usa `workspace.default.iris_classifier_dev` y
+`iris-classifier-dev`; `prod` conserva `workspace.default.iris_classifier` e
+`iris-classifier`. Esto impide que un bundle sobrescriba el `deployment_job_id`
+o endpoint del otro ambiente.
+
 La rama local comparte evaluación, gates, aliases y artefactos, pero reemplaza
 Unity Catalog y Model Serving por SQLite y un manifiesto auditable. Sólo la
 rama Databricks es productiva.
@@ -63,6 +68,10 @@ Responsabilidades:
 - Deployment: actualización del endpoint, smoke test y alias Champion.
 - Bundle: creación declarativa del job, wheel, permisos y targets.
 - Connect job: asociación del ID administrado por el bundle con el modelo.
+
+Cada entrenamiento registra `feature_table_version`. La evaluación reconstruye
+ese snapshot y, si Champion proviene de otro snapshot, reevalúa ambos modelos
+sobre el snapshot del candidato antes de aplicar el gate.
 
 MLflow Tracking conserva runs, métricas y artefactos. Unity Catalog conserva el
 modelo, sus versiones, tags, descripciones y aliases. Lakeflow Jobs orquesta
