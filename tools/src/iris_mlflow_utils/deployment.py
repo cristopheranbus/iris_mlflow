@@ -44,6 +44,15 @@ class ServingEndpointSnapshot:
     traffic_config: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class ServingEndpointChange:
+    """State required to roll back an endpoint upsert."""
+
+    endpoint_name: str
+    created: bool
+    snapshot: ServingEndpointSnapshot | None
+
+
 def _as_dictionary(value: Any) -> dict[str, Any]:
     """Convert SDK models or dictionaries into API-compatible dictionaries."""
 
@@ -58,10 +67,18 @@ def _as_dictionary(value: Any) -> dict[str, Any]:
 def capture_serving_endpoint(
     workspace_client: Any,
     endpoint_name: str,
-) -> ServingEndpointSnapshot:
+) -> ServingEndpointSnapshot | None:
     """Capture the active endpoint configuration before changing it."""
 
-    endpoint = workspace_client.serving_endpoints.get(endpoint_name)
+    try:
+        endpoint = workspace_client.serving_endpoints.get(endpoint_name)
+    except Exception as error:
+        marker = f"{getattr(error, 'error_code', '')} {error}".lower()
+        if any(
+            value in marker for value in ("resource_does_not_exist", "not found", "does not exist")
+        ):
+            return None
+        raise
     endpoint_config = (
         endpoint.get("config") if isinstance(endpoint, dict) else getattr(endpoint, "config", None)
     )
@@ -135,7 +152,7 @@ def evaluate_promotion_gate(
     )
 
 
-def update_serving_endpoint(
+def upsert_serving_endpoint(
     workspace_client: Any,
     *,
     endpoint_name: str,
@@ -143,20 +160,39 @@ def update_serving_endpoint(
     model_version: str,
     workload_size: str = "Small",
     scale_to_zero_enabled: bool = True,
-) -> Any:
-    """Point an endpoint at an exact Unity Catalog model version."""
+) -> ServingEndpointChange:
+    """Create a missing endpoint or update an existing endpoint transactionally."""
 
-    return workspace_client.serving_endpoints.update_config(
+    snapshot = capture_serving_endpoint(workspace_client, endpoint_name)
+    served_entities = [
+        {
+            "entity_name": model_name,
+            "entity_version": str(model_version),
+            "workload_size": workload_size,
+            "scale_to_zero_enabled": scale_to_zero_enabled,
+        }
+    ]
+    if snapshot is None:
+        workspace_client.serving_endpoints.create(
+            name=endpoint_name,
+            config={"served_entities": served_entities},
+        )
+        return ServingEndpointChange(endpoint_name, True, None)
+    workspace_client.serving_endpoints.update_config(
         name=endpoint_name,
-        served_entities=[
-            {
-                "entity_name": model_name,
-                "entity_version": str(model_version),
-                "workload_size": workload_size,
-                "scale_to_zero_enabled": scale_to_zero_enabled,
-            }
-        ],
+        served_entities=served_entities,
     )
+    return ServingEndpointChange(endpoint_name, False, snapshot)
+
+
+def rollback_serving_endpoint(workspace_client: Any, change: ServingEndpointChange) -> Any:
+    """Restore an updated endpoint or delete one created by a failed rollout."""
+
+    if change.created:
+        return workspace_client.serving_endpoints.delete(change.endpoint_name)
+    if change.snapshot is None:
+        raise RuntimeError("Un endpoint existente requiere snapshot para rollback.")
+    return restore_serving_endpoint(workspace_client, change.snapshot)
 
 
 def wait_for_endpoint_ready(
@@ -212,31 +248,3 @@ def promote_champion(
         registry_client.set_model_version_tag(
             model_name, str(previous_champion_version), "deployment_status", "superseded"
         )
-
-
-def ensure_deployment_job(
-    api_client: Any,
-    *,
-    job_name: str,
-    settings: dict[str, Any],
-) -> tuple[str, str]:
-    """Create or reset one exact-name job without producing duplicates."""
-
-    response = api_client.do("GET", "/api/2.1/jobs/list", query={"name": job_name})
-    jobs = [
-        job for job in response.get("jobs", []) if job.get("settings", {}).get("name") == job_name
-    ]
-    if len(jobs) > 1:
-        raise RuntimeError(
-            f"Existen varios jobs llamados {job_name}; resuelve la duplicidad primero."
-        )
-    if jobs:
-        job_id = str(jobs[0]["job_id"])
-        api_client.do(
-            "POST",
-            "/api/2.1/jobs/reset",
-            body={"job_id": int(job_id), "new_settings": settings},
-        )
-        return job_id, "updated"
-    created = api_client.do("POST", "/api/2.1/jobs/create", body=settings)
-    return str(created["job_id"]), "created"

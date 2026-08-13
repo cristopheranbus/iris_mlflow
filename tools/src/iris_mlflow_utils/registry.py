@@ -21,6 +21,7 @@ def ensure_mlflow_experiment(
     experiment_name: str,
     *,
     tracking_uri: str | None = None,
+    artifact_location: str | None = None,
 ) -> str:
     """Create or restore an MLflow experiment before selecting it."""
 
@@ -29,13 +30,34 @@ def ensure_mlflow_experiment(
     client = MlflowClient(tracking_uri=tracking_uri) if tracking_uri else MlflowClient()
     experiment = client.get_experiment_by_name(experiment_name)
     if experiment is None:
-        experiment_id = client.create_experiment(experiment_name)
+        experiment_id = client.create_experiment(
+            experiment_name,
+            artifact_location=artifact_location or None,
+        )
     else:
         experiment_id = experiment.experiment_id
         if experiment.lifecycle_stage != "active":
             client.restore_experiment(experiment_id)
     mlflow.set_experiment(experiment_id=experiment_id)
     return str(experiment_id)
+
+
+def get_model_evaluation_metrics(
+    client: Any,
+    *,
+    model_name: str,
+    model_version: str | int,
+) -> tuple[dict[str, float], str]:
+    """Read governed metrics from the evaluation run linked to a model version."""
+
+    version = client.get_model_version(model_name, str(model_version))
+    evaluation_run_id = str(version.tags.get("evaluation_run_id", "")).strip()
+    if not evaluation_run_id:
+        raise RuntimeError(f"La versión {model_name}/{model_version} no tiene evaluation_run_id.")
+    metrics = client.get_run(evaluation_run_id).data.metrics
+    if not metrics:
+        raise RuntimeError(f"El run de evaluación {evaluation_run_id} no contiene métricas.")
+    return {str(key): float(value) for key, value in metrics.items()}, evaluation_run_id
 
 
 def _descriptions(config: TrainingConfig, *, version: str, run_id: str) -> tuple[str, str]:
@@ -84,6 +106,9 @@ def synchronize_model_registry_metadata(
         "dataset": "iris",
         "feature_source": feature_source,
         "feature_table": feature_location,
+        "feature_table_version": config.feature_table_version or "local",
+        "author": config.author,
+        "purpose": config.purpose,
         "training_stage": "challenger",
     }
     model_tags = {

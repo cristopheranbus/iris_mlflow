@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
+
 from iris_mlflow_utils.config import TrainingConfig
 from iris_mlflow_utils.registry import (
     ensure_mlflow_experiment,
@@ -14,9 +15,7 @@ from iris_mlflow_utils.registry import (
 
 
 class FakeModelVersion:
-    def __init__(
-        self, version: str, tags: dict[str, str], description: str = ""
-    ) -> None:
+    def __init__(self, version: str, tags: dict[str, str], description: str = "") -> None:
         self.version = version
         self.tags = tags
         self.description = description
@@ -36,9 +35,7 @@ class FakeClient:
         self.version = FakeModelVersion("3", {})
         self.alias_version = ""
 
-    def set_model_version_tag(
-        self, name: str, version: str, key: str, value: Any
-    ) -> None:
+    def set_model_version_tag(self, name: str, version: str, key: str, value: Any) -> None:
         self.version.tags[key] = str(value)
 
     def set_registered_model_tag(self, name: str, key: str, value: Any) -> None:
@@ -47,14 +44,10 @@ class FakeClient:
     def update_registered_model(self, *, name: str, description: str) -> None:
         self.model.description = description
 
-    def update_model_version(
-        self, *, name: str, version: str, description: str
-    ) -> None:
+    def update_model_version(self, *, name: str, version: str, description: str) -> None:
         self.version.description = description
 
-    def set_registered_model_alias(
-        self, *, name: str, alias: str, version: str
-    ) -> None:
+    def set_registered_model_alias(self, *, name: str, alias: str, version: str) -> None:
         self.alias_version = version
 
     def get_registered_model(self, name: str) -> FakeRegisteredModel:
@@ -104,15 +97,11 @@ def test_registry_metadata_sets_model_type_tags_and_descriptions() -> None:
 
 def test_ensure_mlflow_experiment_restores_deleted_experiment(tmp_path: Path) -> None:
     database_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
-    experiment_id = ensure_mlflow_experiment(
-        "iris_mlflow_local", tracking_uri=database_uri
-    )
+    experiment_id = ensure_mlflow_experiment("iris_mlflow_local", tracking_uri=database_uri)
     client = mlflow.MlflowClient(tracking_uri=database_uri)
     client.delete_experiment(experiment_id)
 
-    restored_id = ensure_mlflow_experiment(
-        "iris_mlflow_local", tracking_uri=database_uri
-    )
+    restored_id = ensure_mlflow_experiment("iris_mlflow_local", tracking_uri=database_uri)
 
     assert restored_id == experiment_id
     assert client.get_experiment(experiment_id).lifecycle_stage == "active"

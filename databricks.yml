@@ -8,6 +8,9 @@ variables:
   deployment_job_name:
     description: Nombre estable del Deployment Job conectado al modelo.
     default: model-deployment
+  serving_endpoint_name:
+    description: Endpoint de Model Serving aislado por ambiente.
+    default: iris-classifier-dev
   production_service_principal:
     description: Application ID del service principal que ejecuta produccion.
     default: "00000000-0000-0000-0000-000000000000"
@@ -22,9 +25,9 @@ artifacts:
     build: uv build
 
 sync:
-  include:
-    - config/training.toml
   paths:
+    - ./random_forest.ipynb
+    - ./xgboost.ipynb
     - ./deployment
     - ./tools/src
     - ./config
@@ -40,6 +43,8 @@ resources:
           default: ${var.registered_model_name}
         - name: model_version
           default: ""
+        - name: endpoint_name
+          default: ${var.serving_endpoint_name}
       environments:
         - environment_key: default
           spec:
@@ -54,6 +59,7 @@ resources:
             base_parameters:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
+              endpoint_name: "{{job.parameters.endpoint_name}}"
             source: WORKSPACE
 
         - task_key: Approval_Check
@@ -66,6 +72,7 @@ resources:
             base_parameters:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
+              endpoint_name: "{{job.parameters.endpoint_name}}"
             source: WORKSPACE
 
         - task_key: deploy_model
@@ -77,6 +84,7 @@ resources:
             base_parameters:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
+              endpoint_name: "{{job.parameters.endpoint_name}}"
             source: WORKSPACE
 
     connect_deployment_job:
@@ -97,6 +105,7 @@ resources:
             base_parameters:
               model_name: ${var.registered_model_name}
               deployment_job_id: ${resources.jobs.model_deployment.id}
+              endpoint_name: ${var.serving_endpoint_name}
             source: WORKSPACE
 
 targets:
@@ -104,8 +113,9 @@ targets:
     default: true
     mode: development
     variables:
-      registered_model_name: workspace.default.iris_classifier
+      registered_model_name: workspace.default.iris_classifier_dev
       deployment_job_name: model-deployment-dev
+      serving_endpoint_name: iris-classifier-dev
 
   prod:
     mode: production
@@ -116,6 +126,7 @@ targets:
     variables:
       registered_model_name: workspace.default.iris_classifier
       deployment_job_name: model-deployment
+      serving_endpoint_name: iris-classifier
     resources:
       jobs:
         model_deployment:

@@ -7,17 +7,20 @@ import mlflow
 import numpy as np
 import pandas as pd
 import pytest
+from mlflow.models import evaluate
+from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
+from sklearn.tree import DecisionTreeClassifier  # type: ignore[import-untyped]
+
 from iris_mlflow_utils import (
     build_classification_table,
     build_metrics_summary_table,
     evaluate_model,
     load_dataset,
+    load_dataset_for_runtime,
     load_dataset_frame,
+    load_dataset_from_spark,
 )
 from iris_mlflow_utils.config import TrainingConfig, build_config
-from mlflow.models import evaluate
-from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
-from sklearn.tree import DecisionTreeClassifier  # type: ignore[import-untyped]
 
 
 def iris_csv(tmp_path: Path) -> Path:
@@ -82,6 +85,95 @@ def test_load_dataset_rejects_infinite_features(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="infinitos"):
         load_dataset(path)
+
+
+def test_dataset_validation_rejects_empty_null_and_wrong_contract() -> None:
+    with pytest.raises(ValueError, match="vacío"):
+        load_dataset_frame(pd.DataFrame())
+    with pytest.raises(ValueError, match="al menos dos clases"):
+        load_dataset_frame(
+            pd.DataFrame(
+                {
+                    "SepalLengthCm": [1.0],
+                    "SepalWidthCm": [1.0],
+                    "PetalLengthCm": [1.0],
+                    "PetalWidthCm": [1.0],
+                    "Species": ["setosa"],
+                }
+            )
+        )
+    invalid = pd.DataFrame({"feature": [1.0, 2.0], "Species": ["setosa", "virginica"]})
+    with pytest.raises(ValueError, match="contrato Iris"):
+        load_dataset_frame(invalid)
+    invalid.loc[0, "feature"] = np.nan
+    with pytest.raises(ValueError, match="valores nulos"):
+        load_dataset_frame(invalid)
+
+
+def test_dataset_validation_rejects_non_numeric_features() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "SepalLengthCm": ["bad", "value"],
+            "SepalWidthCm": [3.0, 3.1],
+            "PetalLengthCm": [1.0, 4.0],
+            "PetalWidthCm": [0.2, 1.2],
+            "Species": ["setosa", "versicolor"],
+        }
+    )
+    with pytest.raises(TypeError, match="numéricas"):
+        load_dataset_frame(dataframe)
+
+
+def test_runtime_loader_fails_clearly_without_required_backend(tmp_path: Path) -> None:
+    config = build_config(model_slug="random_forest")
+    with pytest.raises(RuntimeError, match="Spark activa"):
+        load_dataset_for_runtime("databricks", spark=None, config=config)
+
+
+def test_spark_loader_reads_an_exact_delta_version() -> None:
+    frame = pd.DataFrame(
+        {
+            "Id": [1, 2],
+            "SepalLengthCm": [5.1, 6.1],
+            "SepalWidthCm": [3.5, 2.8],
+            "PetalLengthCm": [1.4, 4.7],
+            "PetalWidthCm": [0.2, 1.2],
+            "Species": ["setosa", "versicolor"],
+        }
+    )
+
+    class FakeSparkFrame:
+        columns = list(frame.columns)
+
+        def select(self, *columns: str) -> "FakeSparkFrame":
+            assert list(columns) == list(frame.columns)
+            return self
+
+        @staticmethod
+        def toPandas() -> pd.DataFrame:
+            return frame
+
+    class FakeReader:
+        def __init__(self) -> None:
+            self.version = -1
+
+        def option(self, name: str, value: int) -> "FakeReader":
+            assert name == "versionAsOf"
+            self.version = value
+            return self
+
+        def table(self, name: str) -> FakeSparkFrame:
+            assert self.version == 3
+            return FakeSparkFrame()
+
+    class FakeSpark:
+        catalog = type("Catalog", (), {"tableExists": staticmethod(lambda name: True)})()
+        read = FakeReader()
+
+    bundle = load_dataset_from_spark(
+        FakeSpark(), table_name="workspace.default.iris_features", table_version="3"
+    )
+    assert len(bundle.dataframe) == 2
 
 
 def test_load_dataset_frame_matches_file_loader(tmp_path: Path) -> None:
@@ -156,9 +248,7 @@ def test_evaluation_tables_have_stable_columns() -> None:
     )
 
     assert {"partition", "metric", "value"}.issubset(metrics_table.columns)
-    assert {"class_id", "class_name", "precision", "f1_score"}.issubset(
-        classes_table.columns
-    )
+    assert {"class_id", "class_name", "precision", "f1_score"}.issubset(classes_table.columns)
 
 
 def test_mlflow_evaluation_returns_metrics(tmp_path: Path) -> None:
@@ -170,7 +260,7 @@ def test_mlflow_evaluation_returns_metrics(tmp_path: Path) -> None:
 
     result = evaluate(  # type: ignore[no-untyped-call]
         model=model.predict,
-        data=features.assign(target=target),
+        data=features.assign(target=target.astype("float64")),
         targets="target",
         model_type="classifier",
         evaluator_config={"log_model_explainability": False},
@@ -182,13 +272,9 @@ def test_mlflow_evaluation_returns_metrics(tmp_path: Path) -> None:
 def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
     repository_root = Path(__file__).parents[1]
     for notebook_name in ("random_forest.ipynb", "xgboost.ipynb"):
-        notebook = json.loads(
-            (repository_root / notebook_name).read_text(encoding="utf-8")
-        )
+        notebook = json.loads((repository_root / notebook_name).read_text(encoding="utf-8"))
         source = "\n".join(
-            "".join(cell["source"])
-            for cell in notebook["cells"]
-            if cell["cell_type"] == "code"
+            "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
         )
         assert "load_dataset_for_runtime" in source
         assert "RUNTIME_MODE = detect_runtime()" in source
@@ -222,20 +308,14 @@ def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
         assert '"label_list": list(range(len(dataset.classes)))' in source
         assert "MODEL_FRAMEWORK = config.model_framework" in source
         assert "build_probability_metrics" in source
-        assert (
-            '"precision_macro"' not in source
-        )  # La métrica vive en la utilidad común.
+        assert '"precision_macro"' not in source  # La métrica vive en la utilidad común.
 
 
 def test_endpoint_notebook_uses_external_configuration_and_no_token_fallback() -> None:
     repository_root = Path(__file__).parents[1]
-    notebook = json.loads(
-        (repository_root / "test_endpoint.ipynb").read_text(encoding="utf-8")
-    )
+    notebook = json.loads((repository_root / "test_endpoint.ipynb").read_text(encoding="utf-8"))
     source = "\n".join(
-        "".join(cell["source"])
-        for cell in notebook["cells"]
-        if cell["cell_type"] == "code"
+        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
     )
     assert "load_file_config" in source
     assert "dbutils.widgets" not in source
@@ -245,9 +325,7 @@ def test_endpoint_notebook_uses_external_configuration_and_no_token_fallback() -
 def test_build_config_exposes_training_parameters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(
-        "IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier"
-    )
+    monkeypatch.setenv("IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier")
     monkeypatch.setenv("IRIS_RUNTIME", "databricks")
     config = build_config(
         model_slug="random_forest",

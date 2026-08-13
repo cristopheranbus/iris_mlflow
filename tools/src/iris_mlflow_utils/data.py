@@ -27,6 +27,23 @@ class DatasetBundle:
     id_column: str | None
 
 
+def get_delta_table_version(spark: Any, table_name: str) -> str:
+    """Return the current Delta commit version for a Unity Catalog table."""
+
+    if spark is None:
+        raise RuntimeError("Se requiere una sesión Spark para consultar la versión Delta.")
+    if not table_name or table_name.count(".") != 2:
+        raise ValueError("table_name debe usar catalog.schema.table.")
+    rows = spark.sql(f"DESCRIBE HISTORY {table_name} LIMIT 1").collect()
+    if not rows:
+        raise RuntimeError(f"La tabla Delta '{table_name}' no tiene historial disponible.")
+    row = rows[0]
+    version = row["version"] if hasattr(row, "__getitem__") else getattr(row, "version", None)
+    if version is None:
+        raise RuntimeError(f"No fue posible determinar la versión Delta de '{table_name}'.")
+    return str(version)
+
+
 def load_dataset_from_spark(
     spark: Any,
     *,
@@ -90,6 +107,7 @@ def load_dataset_for_runtime(
     *,
     spark: Any | None,
     config: Any,
+    table_version: str | None = None,
 ) -> DatasetBundle:
     """Load local files or the Unity Catalog table according to runtime."""
 
@@ -105,7 +123,7 @@ def load_dataset_for_runtime(
     return load_dataset_from_spark(
         spark,
         table_name=config.feature_table,
-        table_version=config.feature_table_version,
+        table_version=config.feature_table_version if table_version is None else table_version,
         target_column=config.target_column,
     )
 

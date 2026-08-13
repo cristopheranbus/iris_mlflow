@@ -4,7 +4,6 @@ feature_table = "workspace.default.iris_features"
 feature_table_version = ""
 experiment_name = "/Shared/iris_mlflow"
 dataset_version = "iris-features-delta"
-project_version = "2.0.0"
 champion_alias = "Champion"
 challenger_alias = "Challenger"
 author = "unknown"
@@ -17,9 +16,6 @@ model_input_example_rows = 5
 target_column = "Species"
 model_registration_timeout_seconds = 300
 model_registration_poll_seconds = 5
-
-[runtime]
-mode = "auto"
 
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
@@ -77,5 +73,3 @@ challenger_alias = "Challenger"
 smoke_test_rows = 1
 serving_timeout_seconds = 900
 serving_poll_seconds = 15
-notebook_root = "/Workspace/Shared/mlflow_deployment"
-job_name = "model-deployment"

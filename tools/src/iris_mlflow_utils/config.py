@@ -7,6 +7,7 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass, field
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -173,8 +174,6 @@ class DeploymentConfig:
     smoke_test_rows: int = 1
     serving_timeout_seconds: int = 900
     serving_poll_seconds: int = 15
-    notebook_root: str = "/Workspace/Shared/iris_mlflow/deployment"
-    job_name: str = "iris-model-deployment"
     runtime_mode: RuntimeMode = "databricks"
 
     def __post_init__(self) -> None:
@@ -244,13 +243,6 @@ def build_deployment_config() -> DeploymentConfig:
         ),
         serving_poll_seconds=int(
             setting("IRIS_SERVING_POLL_SECONDS", deployment.get("serving_poll_seconds", 15))
-        ),
-        notebook_root=setting(
-            "IRIS_DEPLOYMENT_NOTEBOOK_ROOT",
-            deployment.get("notebook_root", "/Workspace/Shared/iris_mlflow/deployment"),
-        ),
-        job_name=setting(
-            "IRIS_DEPLOYMENT_JOB_NAME", deployment.get("job_name", "iris-model-deployment")
         ),
         runtime_mode=runtime_mode,
     )
@@ -324,9 +316,7 @@ def build_config(
         dataset_version=setting(
             "IRIS_DATASET_VERSION", _file_value(common, "dataset_version", "iris-features-delta")
         ),
-        project_version=setting(
-            "IRIS_PROJECT_VERSION", _file_value(common, "project_version", "2.0.0")
-        ),
+        project_version=setting("IRIS_PROJECT_VERSION", _installed_project_version()),
         author=setting("IRIS_AUTHOR", _file_value(common, "author", "unknown")),
         purpose=setting("IRIS_PURPOSE", _file_value(common, "purpose", "baseline-classification")),
         test_size=float(setting("IRIS_TEST_SIZE", _file_value(common, "test_size", 0.20))),
@@ -412,3 +402,12 @@ def _runtime_mlflow_uri(value: str, *, runtime_mode: RuntimeMode, project_root: 
     if not path.is_absolute():
         path = (project_root / path).resolve()
     return f"sqlite:///{path.as_posix()}"
+
+
+def _installed_project_version() -> str:
+    """Read the package version, with a source-tree fallback before installation."""
+
+    try:
+        return version("iris-mlflow-tools")
+    except PackageNotFoundError:
+        return "2.0.0"

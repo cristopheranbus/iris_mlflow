@@ -7,23 +7,27 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.datasets import load_iris  # type: ignore[import-untyped]
+from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
+
 from iris_mlflow_utils import (
     approve_locally,
     build_evaluation_artifacts,
     build_probability_metrics,
     capture_serving_endpoint,
     detect_runtime,
-    ensure_deployment_job,
     evaluate_model,
     evaluate_promotion_gate,
+    get_delta_table_version,
+    get_model_evaluation_metrics,
     load_dataset_for_runtime,
     promote_champion,
     restore_serving_endpoint,
+    rollback_serving_endpoint,
     simulate_local_deployment,
+    upsert_serving_endpoint,
 )
 from iris_mlflow_utils.config import DeploymentConfig, build_deployment_config
-from sklearn.datasets import load_iris  # type: ignore[import-untyped]
-from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
 
 
 def test_multiclass_artifacts_include_roc_lift_gain_and_confusion(
@@ -85,34 +89,23 @@ def test_promotion_gate_blocks_regression_and_accepts_candidate() -> None:
 def test_deployment_notebooks_keep_only_dynamic_job_inputs() -> None:
     repository_root = Path(__file__).parents[1]
     for name in ("evaluate_model.ipynb", "approval.ipynb", "deploy_model.ipynb"):
-        notebook = json.loads(
-            (repository_root / "deployment" / name).read_text(encoding="utf-8")
-        )
+        notebook = json.loads((repository_root / "deployment" / name).read_text(encoding="utf-8"))
         source = "\n".join(
-            "".join(cell["source"])
-            for cell in notebook["cells"]
-            if cell["cell_type"] == "code"
+            "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
         )
         assert "model_name" in source
         assert "model_version" in source
         assert "IRIS_DATA_PATH" not in source
-        assert (
-            notebook["metadata"]["application/vnd.databricks.v1+notebook"]["widgets"]
-            == {}
-        )
+        assert notebook["metadata"]["application/vnd.databricks.v1+notebook"]["widgets"] == {}
 
 
 def test_evaluation_notebook_links_run_and_logged_model() -> None:
     repository_root = Path(__file__).parents[1]
     notebook = json.loads(
-        (repository_root / "deployment" / "evaluate_model.ipynb").read_text(
-            encoding="utf-8"
-        )
+        (repository_root / "deployment" / "evaluate_model.ipynb").read_text(encoding="utf-8")
     )
     source = "\n".join(
-        "".join(cell["source"])
-        for cell in notebook["cells"]
-        if cell["cell_type"] == "code"
+        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
     )
 
     assert "ensure_mlflow_experiment" in source
@@ -121,26 +114,20 @@ def test_evaluation_notebook_links_run_and_logged_model() -> None:
     assert "evaluation_model_id" in source
 
 
-def test_deployment_notebook_restores_endpoint_before_failing() -> None:
+def test_deployment_notebook_rolls_back_endpoint_before_failing() -> None:
     repository_root = Path(__file__).parents[1]
     notebook = json.loads(
-        (repository_root / "deployment" / "deploy_model.ipynb").read_text(
-            encoding="utf-8"
-        )
+        (repository_root / "deployment" / "deploy_model.ipynb").read_text(encoding="utf-8")
     )
     source = "\n".join(
-        "".join(cell["source"])
-        for cell in notebook["cells"]
-        if cell["cell_type"] == "code"
+        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
     )
 
-    assert "capture_serving_endpoint" in source
-    assert "restore_serving_endpoint" in source
+    assert "upsert_serving_endpoint" in source
+    assert "rollback_serving_endpoint" in source
     assert "rollback_status" in source
     rollback_branch = source[source.index("except Exception as deployment_error") :]
-    assert rollback_branch.index("restore_serving_endpoint") < rollback_branch.rindex(
-        "raise"
-    )
+    assert rollback_branch.index("rollback_serving_endpoint") < rollback_branch.rindex("raise")
 
 
 def test_bundle_defines_governed_deployment_job() -> None:
@@ -153,19 +140,18 @@ def test_bundle_defines_governed_deployment_job() -> None:
     assert "max_concurrent_runs: 1" in bundle
     assert "service_principal_name: ${var.production_service_principal}" in bundle
     assert "deployment_job_id: ${resources.jobs.model_deployment.id}" in bundle
+    assert "workspace.default.iris_classifier_dev" in bundle
+    assert "serving_endpoint_name: iris-classifier-dev" in bundle
+    assert "serving_endpoint_name: iris-classifier" in bundle
 
 
 def test_connector_notebook_does_not_create_or_reset_jobs() -> None:
     repository_root = Path(__file__).parents[1]
     notebook = json.loads(
-        (repository_root / "deployment" / "create_deployment_job.ipynb").read_text(
-            encoding="utf-8"
-        )
+        (repository_root / "deployment" / "create_deployment_job.ipynb").read_text(encoding="utf-8")
     )
     source = "\n".join(
-        "".join(cell["source"])
-        for cell in notebook["cells"]
-        if cell["cell_type"] == "code"
+        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
     )
 
     assert "deployment_job_id" in source
@@ -176,9 +162,9 @@ def test_connector_notebook_does_not_create_or_reset_jobs() -> None:
 
 def test_bundle_ci_uses_oidc_without_long_lived_secret() -> None:
     repository_root = Path(__file__).parents[1]
-    workflow = (
-        repository_root / ".github" / "workflows" / "databricks-bundle.yml"
-    ).read_text(encoding="utf-8")
+    workflow = (repository_root / ".github" / "workflows" / "databricks-bundle.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "DATABRICKS_AUTH_TYPE: github-oidc" in workflow
     assert "id-token: write" in workflow
@@ -204,9 +190,7 @@ def test_serving_snapshot_can_restore_exact_configuration() -> None:
                         }
                     ],
                     "traffic_config": {
-                        "routes": [
-                            {"served_model_name": "iris-1", "traffic_percentage": 100}
-                        ]
+                        "routes": [{"served_model_name": "iris-1", "traffic_percentage": 100}]
                     },
                 }
             }
@@ -220,13 +204,153 @@ def test_serving_snapshot_can_restore_exact_configuration() -> None:
 
     workspace = FakeWorkspace()
     snapshot = capture_serving_endpoint(workspace, "iris-classifier")
+    assert snapshot is not None
     restore_serving_endpoint(workspace, snapshot)
 
     assert snapshot.served_entities[0]["entity_version"] == "1"
     assert workspace.serving_endpoints.updated["name"] == "iris-classifier"
-    assert (
-        workspace.serving_endpoints.updated["traffic_config"] == snapshot.traffic_config
+    assert workspace.serving_endpoints.updated["traffic_config"] == snapshot.traffic_config
+
+
+def test_upsert_creates_missing_endpoint_and_rollback_deletes_it() -> None:
+    class MissingEndpoint(RuntimeError):
+        error_code = "RESOURCE_DOES_NOT_EXIST"
+
+    class FakeServingEndpoints:
+        def __init__(self) -> None:
+            self.created: dict[str, object] = {}
+            self.deleted = ""
+
+        @staticmethod
+        def get(name: str) -> object:
+            raise MissingEndpoint(name)
+
+        def create(self, **kwargs: object) -> None:
+            self.created = kwargs
+
+        def delete(self, name: str) -> None:
+            self.deleted = name
+
+    class FakeWorkspace:
+        serving_endpoints = FakeServingEndpoints()
+
+    workspace = FakeWorkspace()
+    change = upsert_serving_endpoint(
+        workspace,
+        endpoint_name="iris-classifier-dev",
+        model_name="workspace.default.iris_classifier_dev",
+        model_version="1",
     )
+    rollback_serving_endpoint(workspace, change)
+
+    assert change.created is True
+    assert workspace.serving_endpoints.created["name"] == "iris-classifier-dev"
+    assert workspace.serving_endpoints.deleted == "iris-classifier-dev"
+
+
+def test_upsert_updates_existing_endpoint_and_retains_snapshot() -> None:
+    class FakeServingEndpoints:
+        def __init__(self) -> None:
+            self.updated: dict[str, object] = {}
+
+        @staticmethod
+        def get(name: str) -> dict[str, object]:
+            return {"config": {"served_entities": [{"entity_name": "old", "entity_version": "1"}]}}
+
+        def update_config(self, **kwargs: object) -> None:
+            self.updated = kwargs
+
+    class FakeWorkspace:
+        serving_endpoints = FakeServingEndpoints()
+
+    workspace = FakeWorkspace()
+    change = upsert_serving_endpoint(
+        workspace,
+        endpoint_name="iris-classifier",
+        model_name="workspace.default.iris_classifier",
+        model_version="2",
+    )
+
+    assert change.created is False
+    assert change.snapshot is not None
+    assert workspace.serving_endpoints.updated["served_entities"][0]["entity_version"] == "2"  # type: ignore[index]
+
+
+def test_rollback_restores_an_updated_endpoint() -> None:
+    class FakeServingEndpoints:
+        def __init__(self) -> None:
+            self.updated: dict[str, object] = {}
+
+        @staticmethod
+        def get(name: str) -> dict[str, object]:
+            return {"config": {"served_entities": [{"entity_name": "old", "entity_version": "1"}]}}
+
+        def update_config(self, **kwargs: object) -> None:
+            self.updated = kwargs
+
+    class FakeWorkspace:
+        serving_endpoints = FakeServingEndpoints()
+
+    workspace = FakeWorkspace()
+    change = upsert_serving_endpoint(
+        workspace,
+        endpoint_name="iris-classifier",
+        model_name="workspace.default.iris_classifier",
+        model_version="2",
+    )
+    rollback_serving_endpoint(workspace, change)
+    assert workspace.serving_endpoints.updated["served_entities"] == [
+        {"entity_name": "old", "entity_version": "1"}
+    ]
+
+
+def test_wait_for_endpoint_ready_handles_success_failure_and_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from iris_mlflow_utils import wait_for_endpoint_ready
+
+    class FakeServingEndpoints:
+        def __init__(self, states: list[str]) -> None:
+            self.states = states
+
+        def get(self, name: str) -> object:
+            ready = self.states.pop(0) if len(self.states) > 1 else self.states[0]
+            return type(
+                "Endpoint",
+                (),
+                {"state": type("State", (), {"ready": ready, "config_update": None})()},
+            )()
+
+    class FakeWorkspace:
+        def __init__(self, states: list[str]) -> None:
+            self.serving_endpoints = FakeServingEndpoints(states)
+
+    assert wait_for_endpoint_ready(
+        FakeWorkspace(["NOT_READY_YET", "READY"]),
+        "iris",
+        timeout_seconds=1,
+        poll_seconds=0,
+    )
+    with pytest.raises(RuntimeError, match="no está listo"):
+        wait_for_endpoint_ready(
+            FakeWorkspace(["FAILED"]), "iris", timeout_seconds=1, poll_seconds=0
+        )
+    times = iter([0.0, 2.0])
+    monkeypatch.setattr("iris_mlflow_utils.deployment.time.monotonic", lambda: next(times))
+    with pytest.raises(TimeoutError, match="no quedó READY"):
+        wait_for_endpoint_ready(
+            FakeWorkspace(["UPDATING"]), "iris", timeout_seconds=1, poll_seconds=0
+        )
+
+
+def test_capture_endpoint_rejects_non_restorable_configuration() -> None:
+    class FakeWorkspace:
+        serving_endpoints = type(
+            "Serving", (), {"get": staticmethod(lambda name: {"config": {"served_entities": []}})}
+        )()
+
+    with pytest.raises(RuntimeError, match="no contiene entidades"):
+        capture_serving_endpoint(FakeWorkspace(), "empty")
 
 
 def test_champion_promotion_updates_lifecycle_tags() -> None:
@@ -235,14 +359,10 @@ def test_champion_promotion_updates_lifecycle_tags() -> None:
             self.tags: dict[tuple[str, str], str] = {}
             self.aliases: dict[str, str] = {}
 
-        def set_model_version_tag(
-            self, name: str, version: str, key: str, value: str
-        ) -> None:
+        def set_model_version_tag(self, name: str, version: str, key: str, value: str) -> None:
             self.tags[(version, key)] = value
 
-        def set_registered_model_alias(
-            self, name: str, alias: str, version: str
-        ) -> None:
+        def set_registered_model_alias(self, name: str, alias: str, version: str) -> None:
             self.aliases[alias] = version
 
     registry = FakeRegistry()
@@ -261,35 +381,6 @@ def test_champion_promotion_updates_lifecycle_tags() -> None:
     assert registry.tags[("1", "deployment_status")] == "superseded"
 
 
-def test_deployment_job_is_created_or_reset_idempotently() -> None:
-    class FakeApiClient:
-        def __init__(self, jobs: list[dict[str, object]]) -> None:
-            self.jobs = jobs
-            self.calls: list[tuple[str, str, dict[str, object]]] = []
-
-        def do(self, method: str, path: str, **kwargs: object) -> dict[str, object]:
-            self.calls.append((method, path, kwargs))
-            if path.endswith("/list"):
-                return {"jobs": self.jobs}
-            if path.endswith("/create"):
-                return {"job_id": 101}
-            return {}
-
-    settings = {"name": "model-deployment", "tasks": []}
-    new_client = FakeApiClient([])
-    existing_client = FakeApiClient(
-        [{"job_id": 77, "settings": {"name": "model-deployment"}}]
-    )
-
-    assert ensure_deployment_job(
-        new_client, job_name="model-deployment", settings=settings
-    ) == ("101", "created")
-    assert ensure_deployment_job(
-        existing_client, job_name="model-deployment", settings=settings
-    ) == ("77", "updated")
-    assert existing_client.calls[-1][1].endswith("/reset")
-
-
 def test_deployment_config_comes_from_versioned_toml(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -300,8 +391,42 @@ def test_deployment_config_comes_from_versioned_toml(
     assert config.endpoint_name == "iris-classifier"
     assert config.min_test_f1_weighted == 0.90
     assert config.required_approval_tag == "Approval_Check"
-    assert config.notebook_root == "/Workspace/Shared/mlflow_deployment"
-    assert config.job_name == "model-deployment"
+
+
+def test_delta_version_is_read_from_history() -> None:
+    class FakeResult:
+        @staticmethod
+        def collect() -> list[dict[str, int]]:
+            return [{"version": 7}]
+
+    class FakeSpark:
+        def sql(self, query: str) -> FakeResult:
+            assert query == "DESCRIBE HISTORY workspace.default.iris_features LIMIT 1"
+            return FakeResult()
+
+    assert get_delta_table_version(FakeSpark(), "workspace.default.iris_features") == "7"
+
+
+def test_champion_metrics_come_from_linked_evaluation_run() -> None:
+    class FakeClient:
+        @staticmethod
+        def get_model_version(name: str, version: str) -> object:
+            return type("Version", (), {"tags": {"evaluation_run_id": "eval-123"}})()
+
+        @staticmethod
+        def get_run(run_id: str) -> object:
+            assert run_id == "eval-123"
+            return type(
+                "Run",
+                (),
+                {"data": type("Data", (), {"metrics": {"test_f1_weighted": 0.94}})()},
+            )()
+
+    metrics, run_id = get_model_evaluation_metrics(
+        FakeClient(), model_name="iris_classifier", model_version="2"
+    )
+    assert run_id == "eval-123"
+    assert metrics["test_f1_weighted"] == 0.94
 
 
 def test_runtime_detection_prefers_explicit_environment(
@@ -364,8 +489,7 @@ def test_local_dataset_matches_feature_contract() -> None:
     assert not dataset.dataframe["Id"].duplicated().any()
     assert not dataset.dataframe.isna().any().any()
     assert all(
-        pd.api.types.is_numeric_dtype(dataset.dataframe[column])
-        for column in feature_columns
+        pd.api.types.is_numeric_dtype(dataset.dataframe[column]) for column in feature_columns
     )
     assert set(dataset.dataframe["Species"]) == {
         "Iris-setosa",
@@ -378,9 +502,7 @@ def test_local_environment_example_is_self_consistent() -> None:
     repository_root = Path(__file__).parents[1]
     values = {}
     for line in (
-        (repository_root / "config" / "local.env.example")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        (repository_root / "config" / "local.env.example").read_text(encoding="utf-8").splitlines()
     ):
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
@@ -407,6 +529,7 @@ def test_notebooks_are_clean_and_have_cell_ids() -> None:
             if cell["cell_type"] == "code":
                 assert cell.get("execution_count") is None, notebook_path
                 assert cell.get("outputs") == [], notebook_path
+                compile("".join(cell["source"]), str(notebook_path), "exec")
 
 
 def test_local_approval_and_deployment_write_manifest(tmp_path: Path) -> None:
@@ -415,21 +538,15 @@ def test_local_approval_and_deployment_write_manifest(tmp_path: Path) -> None:
             self.tags: dict[str, str] = {}
             self.aliases: dict[str, str] = {}
 
-        def set_model_version_tag(
-            self, name: str, version: str, key: str, value: str
-        ) -> None:
+        def set_model_version_tag(self, name: str, version: str, key: str, value: str) -> None:
             self.tags[key] = value
 
-        def set_registered_model_alias(
-            self, name: str, alias: str, version: str
-        ) -> None:
+        def set_registered_model_alias(self, name: str, alias: str, version: str) -> None:
             self.aliases[alias] = version
 
     client = FakeRegistry()
     assert (
-        approve_locally(client, model_name="iris_classifier", model_version="3")[
-            "Approval_Check"
-        ]
+        approve_locally(client, model_name="iris_classifier", model_version="3")["Approval_Check"]
         == "Approved"
     )
     payload = simulate_local_deployment(
@@ -445,9 +562,7 @@ def test_local_approval_and_deployment_write_manifest(tmp_path: Path) -> None:
     assert payload["rollback_available"] is False
     assert payload["rollback_status"] == "not_required"
     assert client.aliases["Champion"] == "3"
-    assert (
-        json.loads((tmp_path / "manifest.json").read_text())["smoke_test"] == "passed"
-    )
+    assert json.loads((tmp_path / "manifest.json").read_text())["smoke_test"] == "passed"
 
 
 def build_runtime_config_for_test() -> object:
