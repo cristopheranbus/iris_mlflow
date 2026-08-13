@@ -1,0 +1,379 @@
+"""Unit tests for the reusable notebook training helpers."""
+
+import json
+from pathlib import Path
+
+import mlflow
+import numpy as np
+import pandas as pd
+import pytest
+from mlflow.models import evaluate
+from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
+from sklearn.tree import DecisionTreeClassifier  # type: ignore[import-untyped]
+
+from iris_mlflow_utils import (
+    build_classification_table,
+    build_metrics_summary_table,
+    evaluate_model,
+    load_dataset,
+    load_dataset_for_runtime,
+    load_dataset_frame,
+    load_dataset_from_spark,
+)
+from iris_mlflow_utils.config import TrainingConfig, build_config
+
+
+def iris_csv(tmp_path: Path) -> Path:
+    data = pd.DataFrame(
+        {
+            "Id": [1, 2, 3, 4, 5, 6],
+            "SepalLengthCm": [5.1, 5.0, 6.4, 6.3, 6.7, 6.8],
+            "SepalWidthCm": [3.5, 3.4, 3.2, 3.3, 3.1, 3.0],
+            "PetalLengthCm": [1.4, 1.5, 4.5, 4.7, 5.6, 5.5],
+            "PetalWidthCm": [0.2, 0.2, 1.5, 1.6, 2.4, 2.1],
+            "Species": [
+                "setosa",
+                "setosa",
+                "versicolor",
+                "versicolor",
+                "virginica",
+                "virginica",
+            ],
+        }
+    )
+    path = tmp_path / "Iris.csv"
+    data.to_csv(path, index=False)
+    return path
+
+
+def test_load_dataset_validates_and_encodes_labels(tmp_path: Path) -> None:
+    bundle = load_dataset(iris_csv(tmp_path))
+
+    assert bundle.feature_columns == (
+        "SepalLengthCm",
+        "SepalWidthCm",
+        "PetalLengthCm",
+        "PetalWidthCm",
+    )
+    assert bundle.classes == ("setosa", "versicolor", "virginica")
+    assert np.array_equal(bundle.target, np.array([0, 0, 1, 1, 2, 2]))
+
+
+def test_load_dataset_rejects_missing_target(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.csv"
+    pd.DataFrame({"feature": [1, 2]}).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="columna objetivo"):
+        load_dataset(path)
+
+
+def test_load_dataset_rejects_duplicate_ids(tmp_path: Path) -> None:
+    path = iris_csv(tmp_path)
+    dataframe = pd.read_csv(path)
+    dataframe.loc[1, "Id"] = dataframe.loc[0, "Id"]
+    dataframe.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="duplicados"):
+        load_dataset(path)
+
+
+def test_load_dataset_rejects_infinite_features(tmp_path: Path) -> None:
+    path = iris_csv(tmp_path)
+    dataframe = pd.read_csv(path)
+    dataframe.loc[0, "SepalLengthCm"] = np.inf
+    dataframe.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="infinitos"):
+        load_dataset(path)
+
+
+def test_dataset_validation_rejects_empty_null_and_wrong_contract() -> None:
+    with pytest.raises(ValueError, match="vacío"):
+        load_dataset_frame(pd.DataFrame())
+    with pytest.raises(ValueError, match="al menos dos clases"):
+        load_dataset_frame(
+            pd.DataFrame(
+                {
+                    "SepalLengthCm": [1.0],
+                    "SepalWidthCm": [1.0],
+                    "PetalLengthCm": [1.0],
+                    "PetalWidthCm": [1.0],
+                    "Species": ["setosa"],
+                }
+            )
+        )
+    invalid = pd.DataFrame({"feature": [1.0, 2.0], "Species": ["setosa", "virginica"]})
+    with pytest.raises(ValueError, match="contrato Iris"):
+        load_dataset_frame(invalid)
+    invalid.loc[0, "feature"] = np.nan
+    with pytest.raises(ValueError, match="valores nulos"):
+        load_dataset_frame(invalid)
+
+
+def test_dataset_validation_rejects_non_numeric_features() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "SepalLengthCm": ["bad", "value"],
+            "SepalWidthCm": [3.0, 3.1],
+            "PetalLengthCm": [1.0, 4.0],
+            "PetalWidthCm": [0.2, 1.2],
+            "Species": ["setosa", "versicolor"],
+        }
+    )
+    with pytest.raises(TypeError, match="numéricas"):
+        load_dataset_frame(dataframe)
+
+
+def test_runtime_loader_fails_clearly_without_required_backend(tmp_path: Path) -> None:
+    config = build_config(model_slug="random_forest")
+    with pytest.raises(RuntimeError, match="Spark activa"):
+        load_dataset_for_runtime("databricks", spark=None, config=config)
+
+
+def test_spark_loader_reads_an_exact_delta_version() -> None:
+    frame = pd.DataFrame(
+        {
+            "Id": [1, 2],
+            "SepalLengthCm": [5.1, 6.1],
+            "SepalWidthCm": [3.5, 2.8],
+            "PetalLengthCm": [1.4, 4.7],
+            "PetalWidthCm": [0.2, 1.2],
+            "Species": ["setosa", "versicolor"],
+        }
+    )
+
+    class FakeSparkFrame:
+        columns = list(frame.columns)
+
+        def select(self, *columns: str) -> "FakeSparkFrame":
+            assert list(columns) == list(frame.columns)
+            return self
+
+        @staticmethod
+        def toPandas() -> pd.DataFrame:
+            return frame
+
+    class FakeReader:
+        def __init__(self) -> None:
+            self.version = -1
+
+        def option(self, name: str, value: int) -> "FakeReader":
+            assert name == "versionAsOf"
+            self.version = value
+            return self
+
+        def table(self, name: str) -> FakeSparkFrame:
+            assert self.version == 3
+            return FakeSparkFrame()
+
+    class FakeSpark:
+        catalog = type("Catalog", (), {"tableExists": staticmethod(lambda name: True)})()
+        read = FakeReader()
+
+    bundle = load_dataset_from_spark(
+        FakeSpark(), table_name="workspace.default.iris_features", table_version="3"
+    )
+    assert len(bundle.dataframe) == 2
+
+
+def test_load_dataset_frame_matches_file_loader(tmp_path: Path) -> None:
+    path = iris_csv(tmp_path)
+    from_file = load_dataset(path)
+    from_frame = load_dataset_frame(pd.read_csv(path))
+
+    pd.testing.assert_frame_equal(from_file.features, from_frame.features)
+    np.testing.assert_array_equal(from_file.target, from_frame.target)
+
+
+def test_official_train_test_split_is_reproducible(tmp_path: Path) -> None:
+    bundle = load_dataset(iris_csv(tmp_path))
+    first = train_test_split(
+        bundle.features,
+        bundle.target,
+        test_size=0.50,
+        random_state=42,
+        stratify=bundle.target,
+    )
+    second = train_test_split(
+        bundle.features,
+        bundle.target,
+        test_size=0.50,
+        random_state=42,
+        stratify=bundle.target,
+    )
+
+    pd.testing.assert_frame_equal(first[0], second[0])
+    np.testing.assert_array_equal(first[3], second[3])
+
+
+def test_evaluate_model_returns_uniform_metrics() -> None:
+    features = pd.DataFrame({"feature": [0.0, 0.1, 1.0, 1.1]})
+    target = np.array([0, 0, 1, 1])
+    model = DecisionTreeClassifier(random_state=42).fit(features, target)
+
+    result = evaluate_model(model, features, target, labels=[0, 1])
+
+    assert set(result.metrics) == {
+        "accuracy",
+        "precision_macro",
+        "precision_weighted",
+        "recall_macro",
+        "recall_weighted",
+        "f1_macro",
+        "f1_weighted",
+    }
+    assert result.metrics["accuracy"] == 1.0
+    assert result.confusion_matrix.shape == (2, 2)
+
+
+def test_evaluation_tables_have_stable_columns() -> None:
+    features = pd.DataFrame({"feature": [0.0, 0.1, 1.0, 1.1]})
+    target = np.array([0, 0, 1, 1])
+    model = DecisionTreeClassifier(random_state=42).fit(features, target)
+    result = evaluate_model(model, features, target, labels=[0, 1])
+    evaluations = {"test": result}
+
+    metrics_table = build_metrics_summary_table(
+        evaluations,
+        model_type="RandomForest",
+        dataset_version="test",
+        project_version="test",
+    )
+    classes_table = build_classification_table(
+        evaluations,
+        ("setosa", "versicolor"),
+        model_type="RandomForest",
+        dataset_version="test",
+        project_version="test",
+    )
+
+    assert {"partition", "metric", "value"}.issubset(metrics_table.columns)
+    assert {"class_id", "class_name", "precision", "f1_score"}.issubset(classes_table.columns)
+
+
+def test_mlflow_evaluation_returns_metrics(tmp_path: Path) -> None:
+    mlflow.set_tracking_uri(f"sqlite:///{(tmp_path / 'evaluation.db').as_posix()}")
+    mlflow.set_experiment("test_mlflow_evaluation")
+    features = pd.DataFrame({"feature": [0.0, 0.1, 1.0, 1.1]})
+    target = np.array([0, 0, 1, 1])
+    model = DecisionTreeClassifier(random_state=42).fit(features, target)
+
+    result = evaluate(  # type: ignore[no-untyped-call]
+        model=model.predict,
+        data=features.assign(target=target.astype("float64")),
+        targets="target",
+        model_type="classifier",
+        evaluator_config={"log_model_explainability": False},
+    )
+
+    assert "accuracy_score" in result.metrics
+
+
+def test_notebooks_use_idempotent_unity_catalog_feature_table() -> None:
+    repository_root = Path(__file__).parents[1]
+    for notebook_name in ("random_forest.ipynb", "xgboost.ipynb"):
+        notebook = json.loads((repository_root / notebook_name).read_text(encoding="utf-8"))
+        source = "\n".join(
+            "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
+        )
+        assert "load_dataset_for_runtime" in source
+        assert "RUNTIME_MODE = detect_runtime()" in source
+        assert "ensure_feature_table" not in source
+        assert "spark=globals().get('spark')" in source
+        assert "config.registered_model_name" in source
+        assert "config.challenger_alias" in source
+        assert "set_registered_model_alias" in source
+        assert "mlflow.register_model" in source
+        assert "feature_table_source" in source
+        assert "config/training.toml" in source
+        assert "metadata/model_identity.json" in source
+        assert "challenger_alias_status" in source
+        assert "set_model_version_tag" in source
+        assert "DATABRICKS_SERVING_ENDPOINT_NAME" not in source
+        assert "DATABRICKS_SERVING_TRAFFIC_PERCENTAGE" not in source
+        widget_metadata = notebook.get("metadata", {}).get(
+            "application/vnd.databricks.v1+notebook", {}
+        )
+        widget_metadata = widget_metadata.get("widgets", {})
+        assert widget_metadata == {}
+        widget_names = set(widget_metadata)
+        assert "IRIS_RANDOM_FOREST_REGISTERED_MODEL" not in widget_names
+        assert "IRIS_XGBOOST_REGISTERED_MODEL" not in widget_names
+
+        assert "MODEL_TYPE = config.model_type" in source
+        assert 'astype("float64")' in source
+        assert "CONDA_ENV" in source
+        assert '"pip": PIP_REQUIREMENTS' in source
+        assert 'model_type="classifier"' in source
+        assert '"label_list": list(range(len(dataset.classes)))' in source
+        assert "MODEL_FRAMEWORK = config.model_framework" in source
+        assert "build_probability_metrics" in source
+        assert '"precision_macro"' not in source  # La métrica vive en la utilidad común.
+
+
+def test_endpoint_notebook_uses_external_configuration_and_no_token_fallback() -> None:
+    repository_root = Path(__file__).parents[1]
+    notebook = json.loads((repository_root / "test_endpoint.ipynb").read_text(encoding="utf-8"))
+    source = "\n".join(
+        "".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"
+    )
+    assert "load_file_config" in source
+    assert "dbutils.widgets" not in source
+    assert "apiToken()" not in source
+
+
+def test_build_config_exposes_training_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IRIS_REGISTERED_MODEL_NAME", "workspace.default.iris_classifier")
+    monkeypatch.setenv("IRIS_RUNTIME", "databricks")
+    config = build_config(
+        model_slug="random_forest",
+        registered_model_name="workspace.default.fallback",
+        run_name="test-run",
+    )
+
+    assert isinstance(config, TrainingConfig)
+    assert config.feature_table == "workspace.default.iris_features"
+    assert config.champion_alias == "Champion"
+    assert config.challenger_alias == "Challenger"
+    assert config.model_input_example_rows == 5
+    assert config.registered_model_name == "workspace.default.iris_classifier"
+    assert config.model_type == "random_forest"
+    assert config.model_framework == "sklearn"
+    assert config.model_params["n_estimators"] == 100
+    assert config.feature_table_version == ""
+
+
+def test_local_mlflow_uris_are_canonical_from_any_working_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IRIS_RUNTIME", "local")
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_REGISTRY_URI", raising=False)
+    config = build_config(model_slug="random_forest")
+
+    project_root = Path(__file__).parents[1].resolve().as_posix()
+    expected = f"sqlite:///{project_root}/mlflow.db"
+    assert config.tracking_uri == expected
+    assert config.registry_uri == expected
+
+
+def test_training_config_rejects_invalid_model_name() -> None:
+    with pytest.raises(ValueError, match="catalog.schema.model"):
+        TrainingConfig(
+            dataset_path=Path("Iris.csv"),
+            experiment_name="iris_mlflow",
+            artifact_location="",
+            tracking_uri="",
+            registry_uri="databricks-uc",
+            registered_model_name="invalid-model",
+            feature_table="workspace.default.iris_features",
+            champion_alias="Champion",
+            challenger_alias="Challenger",
+            run_name="test-run",
+            dataset_version="test",
+            project_version="test",
+            author="test",
+            purpose="test",
+        )

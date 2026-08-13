@@ -1,0 +1,43 @@
+.databricks/
+.ipynb_checkpoints/
+.jupyter-data/
+.jupyter/
+.ipython/
+**/.ipynb_checkpoints/
+**/.jupyter-data/
+**/.jupyter/
+**/.ipython/
+
+# Local Python environments and generated caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.pytest-tmp/
+.mypy_cache/
+.ruff_cache/
+.uv-cache/
+.audit-*/
+.local-*-runs/
+.bundle-validation/
+
+# Local MLflow tracking and generated reports
+mlruns/
+mlflow.db
+local_backups/
+artifacts/
+.coverage
+htmlcov/
+dist/
+
+# Local configuration and secrets
+.env
+*.env
+!.env.example
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Python-generated files
+__pycache__/
+*.pyc
