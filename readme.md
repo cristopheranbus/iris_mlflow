@@ -38,18 +38,31 @@ la fuente productiva.
 
 ## Componentes
 
-- `random_forest.ipynb`: entrenamiento Random Forest.
-- `xgboost.ipynb`: entrenamiento XGBoost.
-- `docs/training_notebooks.md`: contrato, ejecución y verificación de ambos notebooks.
-- `deployment/evaluate_model.ipynb`: evaluación, gates y artefactos.
-- `deployment/approval.ipynb`: aprobación mediante tag de Unity Catalog.
-- `deployment/deploy_model.ipynb`: Model Serving, smoke test y Champion.
-- `databricks.yml`: infraestructura declarativa, jobs, permisos y targets.
-- `deployment/create_deployment_job.ipynb`: conexión del job del bundle con el modelo.
-- `tools/src/iris_mlflow_utils`: configuración, evaluación, registry y serving.
-- `config/training.toml`: configuración versionada sin secretos.
-- `tests/`: pruebas unitarias y de integración local.
-- `docs/`: arquitectura, evaluación, operación, release y rollback.
+- [`random_forest.ipynb`](random_forest.ipynb): entrenamiento Random Forest.
+- [`xgboost.ipynb`](xgboost.ipynb): entrenamiento XGBoost.
+- [`deployment/evaluate_model.ipynb`](deployment/evaluate_model.ipynb): evaluación, gates y artefactos.
+- [`deployment/approval.ipynb`](deployment/approval.ipynb): aprobación mediante tag de Unity Catalog.
+- [`deployment/deploy_model.ipynb`](deployment/deploy_model.ipynb): Model Serving, smoke test y Champion.
+- [`deployment/create_deployment_job.ipynb`](deployment/create_deployment_job.ipynb): conexión del Job del bundle con el modelo.
+- [`databricks.yml`](databricks.yml): infraestructura declarativa, Jobs, permisos y targets.
+- [`tools/src/iris_mlflow_utils`](tools/src/iris_mlflow_utils): configuración, evaluación, registry y serving.
+- [`config/training.toml`](config/training.toml): configuración versionada sin secretos.
+- [`tests`](tests): pruebas unitarias y de integración local.
+
+## Guía de documentación
+
+| Documento | Contenido |
+|---|---|
+| [Arquitectura](docs/architecture.md) | Flujo completo, responsabilidades, ramas local/Databricks y lugares de ejecución. |
+| [Infraestructura y CI/CD](docs/infrastructure.md) | Bundle, OIDC, GitHub Actions, targets, service principals y suspensión temporal del despliegue. |
+| [Notebooks de entrenamiento](docs/training_notebooks.md) | Contrato y ejecución de Random Forest y XGBoost, parámetros, métricas y publicación en MLflow. |
+| [Configuración](docs/configuration.md) | `training.toml`, perfiles de runtime, variables de entorno y configuración de deployment. |
+| [Ejecución local](docs/local_execution.md) | Instalación, MLflow local, entrenamiento y simulación de aprobación y despliegue. |
+| [Evaluación del modelo](docs/model_evaluation.md) | Métricas, matriz de confusión, ROC, Precision-Recall, lift, gain y criterios de aceptación. |
+| [Operaciones](docs/operations.md) | Promoción, aprobación, Model Serving, diagnóstico y ejecución diaria. |
+| [Checklist de publicación](docs/release-checklist.md) | Controles requeridos antes y después de promover una versión. |
+| [Rollback](docs/rollback.md) | Restauración del endpoint y del alias `Champion`. |
+| [Pruebas](docs/testing.md) | Suite automatizada, calidad estática y comandos de validación. |
 
 ## Operación rápida
 
@@ -63,7 +76,7 @@ la fuente productiva.
 El job se crea con `databricks bundle deploy`. Después se ejecuta una vez
 `connect_deployment_job` para asociarlo al modelo. Producción exige un service
 principal y aprobación del environment de GitHub. Consulta
-`docs/infrastructure.md`.
+[Infraestructura y CI/CD](docs/infrastructure.md).
 
 ## Calidad
 
@@ -77,5 +90,7 @@ uv run mypy
 uv build
 ```
 
-La validación real de Unity Catalog y Model Serving requiere cluster, permisos
-y secretos configurados. Consulta `docs/` para la operación completa.
+La validación real de Unity Catalog y Model Serving requiere una cuenta
+Databricks activa, permisos y credenciales configuradas. Empieza por la
+[guía de arquitectura](docs/architecture.md) y continúa con el
+[manual de operaciones](docs/operations.md).
