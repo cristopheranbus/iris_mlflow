@@ -57,6 +57,18 @@ modelo puede disparar el Deployment Job asociado.
 al actualizar la rama `dev` y reserva `prod` para una ejecución manual protegida
 por el environment `databricks-production`.
 
+Los despliegues tienen un interruptor operativo a nivel de repositorio:
+
+```text
+DATABRICKS_DEPLOY_ENABLED=false
+```
+
+Con `false`, GitHub mantiene activos los tests y `Validate bundle`, pero marca
+los jobs de despliegue como omitidos. Para reanudar `dev` y `prod`, cambia la
+variable a `true` en **Settings → Secrets and variables → Actions →
+Variables** y vuelve a ejecutar el workflow. El valor debe escribirse en
+minúsculas.
+
 La autenticación usa OIDC. GitHub entrega un token temporal y Databricks lo
 intercambia por OAuth; no se almacena `DATABRICKS_CLIENT_SECRET`.
 
@@ -194,6 +206,10 @@ dias. Para habilitar nuevamente la creacion de Jobs:
 4. En **Settings -> Feature enablement**, aceptar los terminos de serverless si
    aparece la solicitud.
 5. En GitHub, abrir la ejecucion fallida y seleccionar **Re-run failed jobs**.
+
+Mientras la cuenta permanezca inactiva, conserva la variable de repositorio
+`DATABRICKS_DEPLOY_ENABLED=false`. Una vez regularizada, cambiala a `true`
+antes de repetir la ejecucion.
 
 Si el plan aparece como `Cancelled` y no solamente como trial vencido,
 Databricks no permite reactivarlo: se debe contactar al equipo de cuenta o
