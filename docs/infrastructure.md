@@ -57,6 +57,21 @@ modelo puede disparar el Deployment Job asociado.
 al actualizar la rama `dev` y reserva `prod` para una ejecución manual protegida
 por el environment `databricks-production`.
 
+La secuencia de un despliegue habilitado es:
+
+1. Autenticación sin secretos mediante OIDC y un service principal.
+2. Validación de `databricks.yml` contra el target seleccionado.
+3. Construcción del wheel `iris_mlflow_tools`.
+4. Carga de notebooks, configuración y wheel a la carpeta privada del bundle.
+5. Creación o actualización de `model_deployment` y
+   `connect_deployment_job` mediante Jobs API.
+6. Ejecución de `connect_deployment_job` para asociar el Job administrado con
+   `workspace.default.iris_classifier`.
+
+El runner temporal de GitHub sólo construye y orquesta. Las tareas
+`evaluate_model`, `Approval_Check` y `deploy_model` corren posteriormente en
+Databricks serverless con el wheel del proyecto instalado.
+
 Los despliegues tienen un interruptor operativo a nivel de repositorio:
 
 ```text

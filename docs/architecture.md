@@ -4,6 +4,33 @@ El ciclo separa entrenamiento, evaluación, aprobación y despliegue. Los
 notebooks de entrenamiento registran versiones como `Challenger`; los
 notebooks de `deployment/` gestionan la promoción posterior.
 
+## Dos niveles de despliegue
+
+El proyecto distingue dos procesos que no deben confundirse:
+
+1. **Despliegue del proyecto:** GitHub Actions usa el bundle para construir el
+   wheel, subir notebooks y configuración, y crear o actualizar los Lakeflow
+   Jobs en Databricks.
+2. **Despliegue de una versión del modelo:** una vez conectado el Deployment
+   Job al modelo registrado, Databricks ejecuta evaluación, aprobación y Model
+   Serving cuando aparece una nueva versión candidata.
+
+GitHub prepara y actualiza la infraestructura; no entrena ni promueve modelos.
+Los notebooks del ciclo del modelo se ejecutan dentro de Databricks.
+
+```mermaid
+flowchart LR
+    A[Push a dev] --> B[GitHub Actions]
+    B --> C[OIDC temporal]
+    C --> D[Validar y desplegar bundle]
+    D --> E[Lakeflow Deployment Job]
+    F[Nueva versión Challenger] --> E
+    E --> G[Evaluación]
+    G --> H[Aprobación]
+    H --> I[Model Serving]
+    I --> J[Alias Champion]
+```
+
 ```mermaid
 flowchart LR
     A{Runtime} -->|Databricks| B[Tabla Delta iris_features]
@@ -40,6 +67,15 @@ Responsabilidades:
 MLflow Tracking conserva runs, métricas y artefactos. Unity Catalog conserva el
 modelo, sus versiones, tags, descripciones y aliases. Lakeflow Jobs orquesta
 las tareas. Model Serving expone exactamente la versión aprobada.
+
+## Lugares de ejecución
+
+- **GitHub runner:** checkout, controles de calidad, instalación de la CLI,
+  construcción del wheel y llamadas de despliegue.
+- **Databricks serverless:** evaluación, aprobación, despliegue, smoke test y
+  promoción de aliases.
+- **Máquina local:** entrenamiento y simulación del flujo cuando
+  `IRIS_RUNTIME=local`; no modifica Unity Catalog ni Model Serving.
 
 `databricks.yml` es la única fuente de verdad de la infraestructura. El
 notebook `create_deployment_job.ipynb` conserva el nombre por compatibilidad,
