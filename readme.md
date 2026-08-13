@@ -38,16 +38,70 @@ la fuente productiva.
 
 ## Componentes
 
-- [`random_forest.ipynb`](random_forest.ipynb): entrenamiento Random Forest.
-- [`xgboost.ipynb`](xgboost.ipynb): entrenamiento XGBoost.
-- [`deployment/evaluate_model.ipynb`](deployment/evaluate_model.ipynb): evaluación, gates y artefactos.
-- [`deployment/approval.ipynb`](deployment/approval.ipynb): aprobación mediante tag de Unity Catalog.
-- [`deployment/deploy_model.ipynb`](deployment/deploy_model.ipynb): Model Serving, smoke test y Champion.
-- [`deployment/create_deployment_job.ipynb`](deployment/create_deployment_job.ipynb): conexión del Job del bundle con el modelo.
-- [`databricks.yml`](databricks.yml): infraestructura declarativa, Jobs, permisos y targets.
-- [`tools/src/iris_mlflow_utils`](tools/src/iris_mlflow_utils): configuración, evaluación, registry y serving.
-- [`config/training.toml`](config/training.toml): configuración versionada sin secretos.
-- [`tests`](tests): pruebas unitarias y de integración local.
+### Entrenamiento e inferencia
+
+| Componente | Funcionalidad |
+|---|---|
+| [`random_forest.ipynb`](random_forest.ipynb) | Entrena Random Forest, registra métricas y artefactos, publica una versión y asigna `Challenger`. |
+| [`xgboost.ipynb`](xgboost.ipynb) | Ejecuta el mismo contrato de entrenamiento y registro utilizando XGBoost. |
+| [`test_endpoint.ipynb`](test_endpoint.ipynb) | Prueba manualmente el endpoint desplegado con datos Iris y revisa su respuesta. |
+| [`tools/databricks_endpoint_client.ipynb`](tools/databricks_endpoint_client.ipynb) | Cliente interactivo reutilizable para invocar un endpoint de Databricks Model Serving. |
+
+### Evaluación, aprobación y despliegue
+
+| Componente | Funcionalidad |
+|---|---|
+| [`deployment/evaluate_model.ipynb`](deployment/evaluate_model.ipynb) | Carga una versión exacta, genera artefactos, aplica thresholds y la compara contra `Champion`. |
+| [`deployment/approval.ipynb`](deployment/approval.ipynb) | Comprueba la aprobación manual `Approval_Check=Approved` y detiene el flujo si falta. |
+| [`deployment/deploy_model.ipynb`](deployment/deploy_model.ipynb) | Actualiza Model Serving, espera `READY`, ejecuta el smoke test y promueve `Champion`. |
+| [`deployment/create_deployment_job.ipynb`](deployment/create_deployment_job.ipynb) | Conecta el Job administrado por el bundle con el modelo registrado mediante `deployment_job_id`. |
+
+### Librería Python compartida
+
+| Componente | Funcionalidad |
+|---|---|
+| [`tools/src/iris_mlflow_utils/config.py`](tools/src/iris_mlflow_utils/config.py) | Lee, valida y resuelve la configuración local o Databricks. |
+| [`tools/src/iris_mlflow_utils/constants.py`](tools/src/iris_mlflow_utils/constants.py) | Centraliza nombres de columnas, clases y valores compartidos. |
+| [`tools/src/iris_mlflow_utils/runtime.py`](tools/src/iris_mlflow_utils/runtime.py) | Detecta el runtime y obtiene parámetros sin depender directamente de `dbutils` en local. |
+| [`tools/src/iris_mlflow_utils/data.py`](tools/src/iris_mlflow_utils/data.py) | Carga y valida el dataset correspondiente a cada runtime. |
+| [`tools/src/iris_mlflow_utils/feature_table.py`](tools/src/iris_mlflow_utils/feature_table.py) | Contiene utilidades explícitas de preparación de la tabla de features fuera del flujo normal. |
+| [`tools/src/iris_mlflow_utils/evaluation.py`](tools/src/iris_mlflow_utils/evaluation.py) | Calcula métricas y genera matrices, ROC, Precision-Recall, lift, gain y demás artefactos. |
+| [`tools/src/iris_mlflow_utils/registry.py`](tools/src/iris_mlflow_utils/registry.py) | Gestiona MLflow Registry, versiones, tags, descripciones y aliases. |
+| [`tools/src/iris_mlflow_utils/deployment.py`](tools/src/iris_mlflow_utils/deployment.py) | Implementa gates, comparación contra `Champion` y decisiones de promoción. |
+| [`tools/src/iris_mlflow_utils/serving.py`](tools/src/iris_mlflow_utils/serving.py) | Construye payloads, administra el endpoint y ejecuta verificaciones de inferencia. |
+| [`tools/src/iris_mlflow_utils/local_deployment.py`](tools/src/iris_mlflow_utils/local_deployment.py) | Simula aprobación y despliegue local, y genera manifiestos auditables. |
+| [`tools/src/iris_mlflow_utils/__init__.py`](tools/src/iris_mlflow_utils/__init__.py) | Expone la interfaz pública del paquete compartido. |
+
+### Configuración, datos y empaquetado
+
+| Componente | Funcionalidad |
+|---|---|
+| [`config/training.toml`](config/training.toml) | Fuente versionada de parámetros de entrenamiento, runtime, MLflow y deployment. |
+| [`config/local.env.example`](config/local.env.example) | Plantilla de variables permitidas para una ejecución local. |
+| [`data/local/iris_features.csv`](data/local/iris_features.csv) | Dataset de desarrollo usado exclusivamente en modo local. |
+| [`tools/pyproject.toml`](tools/pyproject.toml) | Define el paquete, dependencias y configuración de Pytest, Ruff y MyPy. |
+| [`tools/uv.lock`](tools/uv.lock) | Fija versiones reproducibles de las dependencias Python. |
+
+### Infraestructura y automatización
+
+| Componente | Funcionalidad |
+|---|---|
+| [`databricks.yml`](databricks.yml) | Declara wheel, notebooks, Jobs, environments serverless, permisos y targets `dev`/`prod`. |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Ejecuta tests, lint, formato, tipos y build en GitHub Actions. |
+| [`.github/workflows/databricks-bundle.yml`](.github/workflows/databricks-bundle.yml) | Valida el bundle y despliega a Databricks cuando el interruptor operativo está habilitado. |
+
+### Pruebas automatizadas
+
+| Componente | Funcionalidad |
+|---|---|
+| [`tests/test_training_utils.py`](tests/test_training_utils.py) | Valida datos, configuración, evaluación y utilidades usadas durante el entrenamiento. |
+| [`tests/test_deployment.py`](tests/test_deployment.py) | Valida runtime dual, gates, artefactos y simulación del despliegue local. |
+| [`tests/test_registry.py`](tests/test_registry.py) | Comprueba tags, descripciones, versiones y aliases de MLflow Registry. |
+| [`tests/test_serving.py`](tests/test_serving.py) | Comprueba payloads, respuestas y promoción posterior al smoke test. |
+| [`tests/conftest.py`](tests/conftest.py) | Proporciona fixtures y configuración compartida por la suite. |
+| [`tests/fixtures`](tests/fixtures) | Reserva datos pequeños y estables para pruebas que no deben depender del CSV de desarrollo. |
+| [`tests/unit`](tests/unit) | Documenta el alcance de las pruebas unitarias. |
+| [`tests/integration`](tests/integration) | Documenta las validaciones que requieren servicios o infraestructura externa. |
 
 ## Guía de documentación
 
