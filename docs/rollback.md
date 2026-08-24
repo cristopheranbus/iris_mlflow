@@ -3,13 +3,15 @@
 El notebook de despliegue captura las entidades servidas y la configuración de
 tráfico antes de modificar el endpoint. Si falla la espera de `READY` o el smoke
 test, restaura ese snapshot, vuelve a esperar `READY` y deja `Champion` sin
-cambios.
+cambios. Si el endpoint fue creado por esa misma ejecución, lo elimina para
+volver exactamente al estado previo.
 
 Tags de evidencia en la versión candidata:
 
 - `deployment_status=failed`.
 - `smoke_test_status=failed`.
 - `rollback_status=restored` si la restauración terminó correctamente.
+- `rollback_status=deleted_new_endpoint` si se revirtió el primer despliegue.
 - `rollback_status=failed` si también falló la restauración.
 
 Ante `rollback_status=failed`:

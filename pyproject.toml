@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "iris-mlflow-tools"
+version = "2.0.0"
+description = "Utilidades de entrenamiento y MLflow para el clasificador Iris."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "matplotlib>=3.8",
+    "mlflow>=3.1,<4",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "pyarrow>=15",
+    "requests>=2.32",
+    "scikit-learn>=1.5",
+    "sqlparse>=0.6.0",
+    "xgboost>=2.1",
+]
+
+[project.optional-dependencies]
+databricks = ["databricks-sdk>=0.28", "mlflow[databricks]>=3.1,<4"]
+
+[dependency-groups]
+notebooks = [
+    "jupyter>=1.1",
+]
+quality = [
+    "mypy>=1.11",
+    "pandas-stubs>=2.2",
+    "pip-audit>=2.9",
+    "ruff>=0.6",
+    "types-requests>=2.32",
+    "types-pyyaml>=6.0",
+]
+test = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+default-groups = ["test", "quality"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iris_mlflow_utils"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --basetemp=.local/pytest"
+cache_dir = ".local/pytest-cache"
+markers = [
+    "unit: isolated tests without real MLflow, Databricks, or network access",
+    "integration: local integration tests backed by SQLite and temporary files",
+    "contract: structural checks for notebooks, configuration, documentation, and CI",
+]
+
+[tool.coverage.run]
+branch = true
+data_file = ".local/coverage/.coverage"

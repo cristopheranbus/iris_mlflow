@@ -4,7 +4,6 @@ feature_table = "workspace.default.iris_features"
 feature_table_version = ""
 experiment_name = "/Shared/iris_mlflow"
 dataset_version = "iris-features-delta"
-project_version = "2.0.0"
 champion_alias = "Champion"
 challenger_alias = "Challenger"
 author = "unknown"
@@ -18,17 +17,15 @@ target_column = "Species"
 model_registration_timeout_seconds = 300
 model_registration_poll_seconds = 5
 
-[runtime]
-mode = "auto"
-
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
-tracking_uri = "sqlite:///mlflow.db"
-registry_uri = "sqlite:///mlflow.db"
+artifact_location = ".local/mlflow/artifacts"
+tracking_uri = "sqlite:///.local/mlflow/mlflow.db"
+registry_uri = "sqlite:///.local/mlflow/mlflow.db"
 registered_model_name = "iris_classifier"
 experiment_name = "iris_mlflow_local"
 auto_approve = true
-deployment_manifest_path = "artifacts/local_deployment_manifest.json"
+deployment_manifest_path = ".local/deployment/local_deployment_manifest.json"
 
 [runtime.databricks]
 feature_table = "workspace.default.iris_features"
@@ -77,5 +74,3 @@ challenger_alias = "Challenger"
 smoke_test_rows = 1
 serving_timeout_seconds = 900
 serving_poll_seconds = 15
-notebook_root = "/Workspace/Shared/mlflow_deployment"
-job_name = "model-deployment"

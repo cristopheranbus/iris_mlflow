@@ -5,13 +5,11 @@
 `config/training.toml` separa la configuración local de la productiva:
 
 ```toml
-[runtime]
-mode = "auto"
-
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
-tracking_uri = "sqlite:///mlflow.db"
-registry_uri = "sqlite:///mlflow.db"
+artifact_location = ".local/mlflow/artifacts"
+tracking_uri = "sqlite:///.local/mlflow/mlflow.db"
+registry_uri = "sqlite:///.local/mlflow/mlflow.db"
 registered_model_name = "iris_classifier"
 
 [runtime.databricks]
@@ -20,9 +18,8 @@ registered_model_name = "workspace.default.iris_classifier"
 registry_uri = "databricks-uc"
 ```
 
-La URI local `sqlite:///mlflow.db` se canoniza a la raíz del proyecto, así que
-los notebooks y la UI usan la misma base aunque se ejecuten desde `tools` o
-desde la raíz.
+La URI local se canoniza a la raíz del proyecto, así que los notebooks y la UI
+usan la misma base aunque se ejecuten desde otro directorio.
 
 La precedencia del runtime es `IRIS_RUNTIME`, luego `dbutils`, luego
 `DATABRICKS_RUNTIME_VERSION` y finalmente `local`. Variables locales
@@ -45,9 +42,10 @@ La sección `[deployment]` define:
 - `required_approval_tag`.
 - Aliases Champion y Challenger.
 - Timeout y polling de Model Serving.
-- Nombre del Deployment Job. Las rutas y el cómputo pertenecen al bundle.
+- El nombre del job y el endpoint por ambiente pertenecen al bundle.
 
-Los únicos parámetros dinámicos del job son `model_name` y `model_version`.
+Los parámetros dinámicos son `model_name` y `model_version`. `endpoint_name`
+es un valor estático inyectado por el target del bundle para aislar ambientes.
 
 Overrides permitidos:
 
@@ -58,7 +56,6 @@ IRIS_MIN_TEST_F1_WEIGHTED
 IRIS_MIN_TEST_ACCURACY
 IRIS_MAX_METRIC_REGRESSION
 IRIS_REQUIRED_APPROVAL_TAG
-IRIS_DEPLOYMENT_JOB_NAME
 ```
 
 La identidad de producción y el grupo operador se inyectan como variables del
@@ -69,6 +66,6 @@ Tokens y credenciales deben resolverse con Databricks Secrets o la identidad
 administrada del job. Nunca se guardan en TOML, notebooks, tags o mensajes de
 error.
 
-En modo local, MLflow usa `sqlite:///mlflow.db` para tracking y registry. Esto
+En modo local, MLflow usa `sqlite:///.local/mlflow/mlflow.db` para tracking y registry. Esto
 evita el backend filesystem legado de MLflow y conserva runs, artefactos,
 versiones y aliases en un único almacén local.
