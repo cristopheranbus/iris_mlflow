@@ -19,12 +19,13 @@ model_registration_poll_seconds = 5
 
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
-tracking_uri = "sqlite:///mlflow.db"
-registry_uri = "sqlite:///mlflow.db"
+artifact_location = ".local/mlflow/artifacts"
+tracking_uri = "sqlite:///.local/mlflow/mlflow.db"
+registry_uri = "sqlite:///.local/mlflow/mlflow.db"
 registered_model_name = "iris_classifier"
 experiment_name = "iris_mlflow_local"
 auto_approve = true
-deployment_manifest_path = "artifacts/local_deployment_manifest.json"
+deployment_manifest_path = ".local/deployment/local_deployment_manifest.json"
 
 [runtime.databricks]
 feature_table = "workspace.default.iris_features"

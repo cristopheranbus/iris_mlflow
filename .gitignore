@@ -10,6 +10,7 @@
 
 # Local Python environments and generated caches
 .venv/
+.local/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -27,7 +28,9 @@ mlflow.db
 local_backups/
 artifacts/
 .coverage
+coverage.json
 htmlcov/
+test-results/
 dist/
 
 # Local configuration and secrets

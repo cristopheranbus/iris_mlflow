@@ -1,0 +1,125 @@
+name: 03 · Databricks bundle validation and deployment
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target que se desplegara
+        required: true
+        type: choice
+        default: dev
+        options: [dev, prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: databricks-deployment-${{ github.ref }}-${{ inputs.target || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  deployment-disabled:
+    name: Report disabled deployment
+    if: vars.DATABRICKS_DEPLOY_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain disabled deployment
+        run: echo "Databricks deployment is intentionally disabled."
+
+  validate-bundle:
+    name: Validate Databricks bundle
+    if: vars.DATABRICKS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target == 'prod' && 'databricks-production' || 'databricks-dev' }}
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      BUNDLE_VAR_production_service_principal: ${{ vars.DATABRICKS_CLIENT_ID }}
+      BUNDLE_VAR_operators_group: ${{ vars.DATABRICKS_OPERATORS_GROUP }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.11.21"
+      - name: Set up Databricks CLI
+        uses: databricks/setup-cli@903f2679e2ca728decb4a78c74d57570f8e8d2e5
+        with:
+          version: 1.11.0
+      - name: Databricks preflight
+        env:
+          PREFLIGHT_MODEL_NAME: ${{ inputs.target == 'prod' && 'workspace.default.iris_classifier' || 'workspace.default.iris_classifier_dev' }}
+        run: >-
+          python ops/databricks/preflight.py
+          --model-name "$PREFLIGHT_MODEL_NAME"
+          --feature-table workspace.default.iris_features
+      - name: Validate target
+        run: databricks bundle validate -t "${{ inputs.target || 'dev' }}"
+
+  deploy-development:
+    name: Deploy to development
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/dev' &&
+      vars.DATABRICKS_DEPLOY_ENABLED == 'true'
+    needs: validate-bundle
+    runs-on: ubuntu-latest
+    environment: databricks-dev
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.11.21"
+      - name: Set up Databricks CLI
+        uses: databricks/setup-cli@903f2679e2ca728decb4a78c74d57570f8e8d2e5
+        with:
+          version: 1.11.0
+      - name: Deploy development target
+        run: databricks bundle deploy -t dev
+      - name: Connect deployment job to model
+        run: databricks bundle run -t dev connect_deployment_job
+
+  deploy-production:
+    name: Deploy to production
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.target == 'prod' &&
+      github.ref == 'refs/heads/main' &&
+      vars.DATABRICKS_DEPLOY_ENABLED == 'true'
+    needs: validate-bundle
+    runs-on: ubuntu-latest
+    environment: databricks-production
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      BUNDLE_VAR_production_service_principal: ${{ vars.DATABRICKS_CLIENT_ID }}
+      BUNDLE_VAR_operators_group: ${{ vars.DATABRICKS_OPERATORS_GROUP }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.11.21"
+      - name: Set up Databricks CLI
+        uses: databricks/setup-cli@903f2679e2ca728decb4a78c74d57570f8e8d2e5
+        with:
+          version: 1.11.0
+      - name: Deploy production target
+        run: databricks bundle deploy -t prod
+      - name: Connect deployment job to model
+        run: databricks bundle run -t prod connect_deployment_job

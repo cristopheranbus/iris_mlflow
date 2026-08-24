@@ -5,10 +5,10 @@ Unity Catalog ni Model Serving.
 
 ## Instalación
 
-La base local canónica es `<raiz-del-proyecto>/mlflow.db`; la configuración la
+La base local canónica es `<raiz-del-proyecto>/.local/mlflow/mlflow.db`; la configuración la
 resuelve de forma absoluta para evitar duplicados por directorio de ejecución.
 
-Desde `tools` instala las dependencias con `uv sync` y ejecuta los notebooks
+Desde la raíz instala el grupo de notebooks con `uv sync --group notebooks` y ejecútalos
 con Jupyter. El dataset de desarrollo está en
 `data/local/iris_features.csv` y conserva el mismo contrato de columnas que la
 tabla Delta productiva.
@@ -17,12 +17,11 @@ tabla Delta productiva.
 
 ```powershell
 $env:IRIS_RUNTIME = "local"
-cd tools
-uv run jupyter notebook ..\random_forest.ipynb
+uv run --group notebooks jupyter notebook notebooks/training/random_forest.ipynb
 ```
 
-También puedes ejecutar `xgboost.ipynb`. El modelo se registra como
-`iris_classifier` en SQLite, con tracking y registry en `mlflow.db`. Se
+También puedes ejecutar `notebooks/training/xgboost.ipynb`. El modelo se registra como
+`iris_classifier` en SQLite, con tracking y registry bajo `.local/mlflow/`. Se
 conservan métricas, artefactos, tags y descripción. El entrenamiento mueve
 únicamente `Challenger`; `Champion` se asigna durante el despliegue.
 
@@ -34,7 +33,7 @@ DAG local y no es necesaria para promover el modelo. Con
 `IRIS_LOCAL_AUTO_APPROVE=true`, la aprobación
 se registra automáticamente después de superar los gates. El despliegue local
 no llama APIs de Databricks: ejecuta un smoke test, promueve el alias local y
-escribe `artifacts/local_deployment_manifest.json`.
+escribe `.local/deployment/local_deployment_manifest.json`.
 
 ## Diferencia con Databricks Connect
 
