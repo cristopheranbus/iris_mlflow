@@ -7,8 +7,9 @@
 ```toml
 [runtime.local]
 dataset_path = "data/local/iris_features.csv"
-tracking_uri = "sqlite:///mlflow.db"
-registry_uri = "sqlite:///mlflow.db"
+artifact_location = ".local/mlflow/artifacts"
+tracking_uri = "sqlite:///.local/mlflow/mlflow.db"
+registry_uri = "sqlite:///.local/mlflow/mlflow.db"
 registered_model_name = "iris_classifier"
 
 [runtime.databricks]
@@ -17,9 +18,8 @@ registered_model_name = "workspace.default.iris_classifier"
 registry_uri = "databricks-uc"
 ```
 
-La URI local `sqlite:///mlflow.db` se canoniza a la raíz del proyecto, así que
-los notebooks y la UI usan la misma base aunque se ejecuten desde `tools` o
-desde la raíz.
+La URI local se canoniza a la raíz del proyecto, así que los notebooks y la UI
+usan la misma base aunque se ejecuten desde otro directorio.
 
 La precedencia del runtime es `IRIS_RUNTIME`, luego `dbutils`, luego
 `DATABRICKS_RUNTIME_VERSION` y finalmente `local`. Variables locales
@@ -66,6 +66,6 @@ Tokens y credenciales deben resolverse con Databricks Secrets o la identidad
 administrada del job. Nunca se guardan en TOML, notebooks, tags o mensajes de
 error.
 
-En modo local, MLflow usa `sqlite:///mlflow.db` para tracking y registry. Esto
+En modo local, MLflow usa `sqlite:///.local/mlflow/mlflow.db` para tracking y registry. Esto
 evita el backend filesystem legado de MLflow y conserva runs, artefactos,
 versiones y aliases en un único almacén local.

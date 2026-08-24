@@ -82,7 +82,7 @@ necesita reproducir un escenario.
 | Datos | `data/local/iris_features.csv` | `workspace.default.iris_features` |
 | Motor | Pandas, scikit-learn y XGBoost | Spark y Delta |
 | Tracking | MLflow local | MLflow Databricks |
-| Registry | SQLite (`mlflow.db`) | Unity Catalog |
+| Registry | SQLite (`.local/mlflow/mlflow.db`) | Unity Catalog |
 | Serving | Simulado y verificable | Model Serving real |
 | Aprobación | Automática configurable | Manual mediante Job |
 | Endpoint | No se crea | `iris-classifier-dev` o `iris-classifier` |
@@ -96,24 +96,22 @@ cuenta cloud.
 
 ```powershell
 $env:IRIS_RUNTIME = "local"
-cd tools
-uv run jupyter notebook ..\random_forest.ipynb
+uv run --group notebooks jupyter notebook notebooks/training/random_forest.ipynb
 ```
 
 Para XGBoost:
 
 ```powershell
 $env:IRIS_RUNTIME = "local"
-cd tools
-uv run jupyter notebook ..\xgboost.ipynb
+uv run --group notebooks jupyter notebook notebooks/training/xgboost.ipynb
 ```
 
 Para visualizar los runs locales desde la raíz del proyecto:
 
 ```powershell
 cd C:\Users\crist\Documents\MisDev\iris_mlflow
-.\tools\.venv\Scripts\mlflow.exe ui `
-  --backend-store-uri sqlite:///mlflow.db `
+uv run mlflow ui `
+  --backend-store-uri sqlite:///.local/mlflow/mlflow.db `
   --host 127.0.0.1 `
   --port 5001
 ```
@@ -126,7 +124,7 @@ evaluación y promoción es:
 3. Ejecutar `deployment/evaluate_model.ipynb`.
 4. Ejecutar `deployment/approval.ipynb`.
 5. Ejecutar `deployment/deploy_model.ipynb`.
-6. Revisar `artifacts/local_deployment_manifest.json`.
+6. Revisar `.local/deployment/local_deployment_manifest.json`.
 
 La simulación local ejecuta un smoke test, promueve el alias local y genera un
 manifiesto auditable. No crea un endpoint HTTP ni modifica Databricks.
@@ -194,7 +192,7 @@ La guía de interpretación se encuentra en
 
 ### Reproducibilidad
 
-- Dependencias fijadas en [`tools/uv.lock`](tools/uv.lock).
+- Dependencias fijadas en [`uv.lock`](uv.lock).
 - Configuración versionada en [`config/training.toml`](config/training.toml).
 - Semillas controladas en los entrenamientos.
 - Versionado de snapshots Delta en Databricks.
@@ -253,10 +251,10 @@ interactiva.
 
 | Componente | Funcionalidad |
 |---|---|
-| [`random_forest.ipynb`](random_forest.ipynb) | Entrena Random Forest, registra métricas y artefactos, publica una versión y asigna `Challenger`. |
-| [`xgboost.ipynb`](xgboost.ipynb) | Ejecuta el mismo contrato de entrenamiento y registro utilizando XGBoost. |
-| [`test_endpoint.ipynb`](test_endpoint.ipynb) | Prueba manualmente el endpoint desplegado con datos Iris y revisa su respuesta. |
-| [`tools/databricks_endpoint_client.ipynb`](tools/databricks_endpoint_client.ipynb) | Cliente interactivo reutilizable para invocar un endpoint de Databricks Model Serving. |
+| [`notebooks/training/random_forest.ipynb`](notebooks/training/random_forest.ipynb) | Entrena Random Forest, registra métricas y artefactos, publica una versión y asigna `Challenger`. |
+| [`notebooks/training/xgboost.ipynb`](notebooks/training/xgboost.ipynb) | Ejecuta el mismo contrato de entrenamiento y registro utilizando XGBoost. |
+| [`notebooks/serving/test_endpoint.ipynb`](notebooks/serving/test_endpoint.ipynb) | Prueba manualmente el endpoint desplegado con datos Iris y revisa su respuesta. |
+| [`notebooks/serving/endpoint_client.ipynb`](notebooks/serving/endpoint_client.ipynb) | Cliente interactivo reutilizable para invocar un endpoint de Databricks Model Serving. |
 
 ### Evaluación, aprobación y promoción
 
@@ -276,17 +274,17 @@ contrato funcional.
 
 | Componente | Funcionalidad |
 |---|---|
-| [`tools/src/iris_mlflow_utils/config.py`](tools/src/iris_mlflow_utils/config.py) | Lee, valida y resuelve la configuración local o Databricks. |
-| [`tools/src/iris_mlflow_utils/constants.py`](tools/src/iris_mlflow_utils/constants.py) | Centraliza nombres de columnas, clases y valores compartidos. |
-| [`tools/src/iris_mlflow_utils/runtime.py`](tools/src/iris_mlflow_utils/runtime.py) | Detecta el runtime y obtiene parámetros sin depender directamente de `dbutils` en local. |
-| [`tools/src/iris_mlflow_utils/data.py`](tools/src/iris_mlflow_utils/data.py) | Carga y valida el dataset correspondiente a cada runtime. |
-| [`tools/src/iris_mlflow_utils/feature_table.py`](tools/src/iris_mlflow_utils/feature_table.py) | Contiene utilidades explícitas de preparación de la tabla de features fuera del flujo normal. |
-| [`tools/src/iris_mlflow_utils/evaluation.py`](tools/src/iris_mlflow_utils/evaluation.py) | Calcula métricas y genera matrices, ROC, Precision-Recall, lift, gain y demás artefactos. |
-| [`tools/src/iris_mlflow_utils/registry.py`](tools/src/iris_mlflow_utils/registry.py) | Gestiona MLflow Registry, versiones, tags, descripciones y aliases. |
-| [`tools/src/iris_mlflow_utils/deployment.py`](tools/src/iris_mlflow_utils/deployment.py) | Implementa gates, create/update del endpoint, rollback y promoción posterior al smoke test. |
-| [`tools/src/iris_mlflow_utils/serving.py`](tools/src/iris_mlflow_utils/serving.py) | Construye payloads, administra el endpoint y ejecuta verificaciones de inferencia. |
-| [`tools/src/iris_mlflow_utils/local_deployment.py`](tools/src/iris_mlflow_utils/local_deployment.py) | Simula aprobación y despliegue local, y genera manifiestos auditables. |
-| [`tools/src/iris_mlflow_utils/__init__.py`](tools/src/iris_mlflow_utils/__init__.py) | Expone la interfaz pública del paquete compartido. |
+| [`src/iris_mlflow_utils/config.py`](src/iris_mlflow_utils/config.py) | Lee, valida y resuelve la configuración local o Databricks. |
+| [`src/iris_mlflow_utils/constants.py`](src/iris_mlflow_utils/constants.py) | Centraliza nombres de columnas, clases y valores compartidos. |
+| [`src/iris_mlflow_utils/runtime.py`](src/iris_mlflow_utils/runtime.py) | Detecta el runtime y obtiene parámetros sin depender directamente de `dbutils` en local. |
+| [`src/iris_mlflow_utils/data.py`](src/iris_mlflow_utils/data.py) | Carga y valida el dataset correspondiente a cada runtime. |
+| [`src/iris_mlflow_utils/feature_table.py`](src/iris_mlflow_utils/feature_table.py) | Contiene utilidades explícitas de preparación de la tabla de features fuera del flujo normal. |
+| [`src/iris_mlflow_utils/evaluation.py`](src/iris_mlflow_utils/evaluation.py) | Calcula métricas y genera matrices, ROC, Precision-Recall, lift, gain y demás artefactos. |
+| [`src/iris_mlflow_utils/registry.py`](src/iris_mlflow_utils/registry.py) | Gestiona MLflow Registry, versiones, tags, descripciones y aliases. |
+| [`src/iris_mlflow_utils/deployment.py`](src/iris_mlflow_utils/deployment.py) | Implementa gates, create/update del endpoint, rollback y promoción posterior al smoke test. |
+| [`src/iris_mlflow_utils/serving.py`](src/iris_mlflow_utils/serving.py) | Construye payloads, administra el endpoint y ejecuta verificaciones de inferencia. |
+| [`src/iris_mlflow_utils/local_deployment.py`](src/iris_mlflow_utils/local_deployment.py) | Simula aprobación y despliegue local, y genera manifiestos auditables. |
+| [`src/iris_mlflow_utils/__init__.py`](src/iris_mlflow_utils/__init__.py) | Expone la interfaz pública del paquete compartido. |
 
 ### Configuración y datos
 
@@ -295,28 +293,29 @@ contrato funcional.
 | [`config/training.toml`](config/training.toml) | Fuente versionada de parámetros de entrenamiento, runtime, MLflow y deployment. |
 | [`config/local.env.example`](config/local.env.example) | Plantilla de variables permitidas para una ejecución local. |
 | [`data/local/iris_features.csv`](data/local/iris_features.csv) | Dataset de desarrollo usado exclusivamente en modo local. |
-| [`tools/pyproject.toml`](tools/pyproject.toml) | Define el paquete, dependencias y configuración de Pytest, Ruff y MyPy. |
-| [`tools/uv.lock`](tools/uv.lock) | Fija versiones reproducibles de las dependencias Python. |
+| [`pyproject.toml`](pyproject.toml) | Define el paquete, sus dependencias y la configuración de pytest y cobertura. |
+| [`.python-version`](.python-version) | Fija Python 3.12 para mantener igualdad entre desarrollo y CI. |
+| [`uv.lock`](uv.lock) | Fija versiones reproducibles de las dependencias Python. |
+| [`quality`](quality) | Centraliza Ruff, mypy y el gate independiente de cobertura. |
 
 ### Infraestructura y automatización
 
 | Componente | Funcionalidad |
 |---|---|
 | [`databricks.yml`](databricks.yml) | Declara wheel, notebooks, Jobs, entornos serverless, permisos y targets `dev`/`prod`. |
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Ejecuta tests, lint, formato, tipos y build en GitHub Actions. |
-| [`.github/workflows/databricks-bundle.yml`](.github/workflows/databricks-bundle.yml) | Valida el bundle y despliega a Databricks cuando el interruptor operativo está habilitado. |
-| [`.github/workflows/security.yml`](.github/workflows/security.yml) | Escanea el historial para impedir la publicación de secretos. |
-| [`tools/scripts/databricks_preflight.py`](tools/scripts/databricks_preflight.py) | Verifica cuenta, identidad, tabla, modelo y grants antes del despliegue. |
-| [`tools/scripts/bootstrap_databricks_permissions.ps1`](tools/scripts/bootstrap_databricks_permissions.ps1) | Aplica permisos mínimos de Unity Catalog con una identidad administradora. |
+| [`.github/workflows/01-code-quality.yml`](.github/workflows/01-code-quality.yml) | Ejecuta tests, cobertura, análisis estático, auditoría y build del paquete. |
+| [`.github/workflows/02-security-scanning.yml`](.github/workflows/02-security-scanning.yml) | Escanea el historial completo para impedir la publicación de secretos. |
+| [`.github/workflows/03-databricks-deployment.yml`](.github/workflows/03-databricks-deployment.yml) | Valida el bundle y despliega a Databricks cuando el interruptor operativo está habilitado. |
+| [`ops/databricks/preflight.py`](ops/databricks/preflight.py) | Verifica cuenta, identidad, tabla, modelo y grants antes del despliegue. |
+| [`ops/databricks/bootstrap_permissions.ps1`](ops/databricks/bootstrap_permissions.ps1) | Aplica permisos mínimos de Unity Catalog con una identidad administradora. |
 
 ### Pruebas automatizadas
 
 | Componente | Funcionalidad |
 |---|---|
-| [`tests/test_training_utils.py`](tests/test_training_utils.py) | Valida datos, configuración, evaluación y utilidades usadas durante el entrenamiento. |
-| [`tests/test_deployment.py`](tests/test_deployment.py) | Valida runtime dual, gates, artefactos y simulación del despliegue local. |
-| [`tests/test_registry.py`](tests/test_registry.py) | Comprueba tags, descripciones, versiones y aliases de MLflow Registry. |
-| [`tests/test_serving.py`](tests/test_serving.py) | Comprueba payloads, respuestas y promoción posterior al smoke test. |
+| [`tests/unit/`](tests/unit/) | Valida lógica aislada, errores y límites sin red, MLflow real ni Databricks. |
+| [`tests/integration/`](tests/integration/) | Ejecuta MLflow con SQLite, archivos temporales y el flujo local. |
+| [`tests/contracts/`](tests/contracts/) | Comprueba notebooks, bundle, workflows, documentación y configuración. |
 | [`tests/conftest.py`](tests/conftest.py) | Proporciona fixtures y configuración compartida por la suite. |
 | [`tests/fixtures`](tests/fixtures) | Reserva datos pequeños y estables para pruebas que no deben depender del CSV de desarrollo. |
 | [`tests/unit`](tests/unit) | Documenta el alcance de las pruebas unitarias. |
@@ -328,8 +327,7 @@ contrato funcional.
 
 ```powershell
 $env:IRIS_RUNTIME = "local"
-cd tools
-uv run jupyter notebook ..\random_forest.ipynb
+uv run --group notebooks jupyter notebook notebooks/training/random_forest.ipynb
 ```
 
 Después ejecuta, en este orden:
@@ -338,7 +336,7 @@ Después ejecuta, en este orden:
 2. Ejecutar `deployment/evaluate_model.ipynb`.
 3. Ejecutar `deployment/approval.ipynb`.
 4. Ejecutar `deployment/deploy_model.ipynb`.
-5. Revisar `artifacts/local_deployment_manifest.json`.
+5. Revisar `.local/deployment/local_deployment_manifest.json`.
 
 ### Databricks
 
@@ -392,25 +390,26 @@ permisos, preflight y reactivación del despliegue.
 - [Checklist de publicación](docs/release-checklist.md): controles previos y
   posteriores al release.
 - [Rollback](docs/rollback.md): restauración del endpoint y de `Champion`.
-- [Pruebas](docs/testing.md): suite, calidad estática y validaciones.
+- [Pruebas](docs/testing.md): estrategia, ejecución y catálogo detallado de pruebas unitarias, de integración y de contratos.
 
 ## Calidad y contribución
 
 Requisitos principales:
 
-- Python compatible con la configuración de [`tools/pyproject.toml`](tools/pyproject.toml).
+- Python compatible con la configuración de [`pyproject.toml`](pyproject.toml).
 - [`uv`](https://docs.astral.sh/uv/) para instalar dependencias y ejecutar el
   proyecto.
 - Jupyter únicamente cuando se ejecuten notebooks.
 
-Desde `tools`, ejecuta las validaciones locales:
+Desde la raíz, ejecuta las validaciones locales:
 
 ```powershell
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
+uv run --group test pytest
+uv run --group quality ruff check --config quality/ruff.toml src tests quality ops
+uv run --group quality ruff format --check --config quality/ruff.toml src tests quality ops
+uv run --group test --group quality mypy --config-file quality/mypy.ini src tests quality ops
 uv build
+uv run --no-sync python quality/smoke_wheel.py --python 3.12
 ```
 
 Las pull requests deben mantener pruebas, lint, formato, tipos, build y
@@ -420,7 +419,7 @@ infraestructura deben actualizar la documentación correspondiente.
 No se deben subir al repositorio:
 
 - Tokens, sesiones o archivos de autenticación.
-- `mlflow.db`, `mlruns` o bases locales.
+- `.local/`, `mlflow.db`, `mlruns` o bases locales.
 - Artefactos generados por ejecuciones.
 - Archivos temporales de Jupyter.
 - Secretos en configuración versionada.

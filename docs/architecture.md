@@ -90,5 +90,5 @@ las tareas. Model Serving expone exactamente la versión aprobada.
 notebook `create_deployment_job.ipynb` conserva el nombre por compatibilidad,
 pero ya no crea ni resetea jobs: sólo registra `deployment_job_id` en el modelo.
 
-Las utilidades se encuentran en `tools/src/iris_mlflow_utils`: `config.py`,
+Las utilidades se encuentran en `src/iris_mlflow_utils`: `config.py`,
 `data.py`, `evaluation.py`, `deployment.py`, `registry.py` y `serving.py`.

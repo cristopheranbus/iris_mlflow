@@ -50,7 +50,7 @@ separación real de funciones.
 Con una sesión administradora:
 
 ```powershell
-.\tools\scripts\bootstrap_databricks_permissions.ps1 `
+.\ops\databricks\bootstrap_permissions.ps1 `
   -Principal "<application-id>" `
   -ModelName "workspace.default.iris_classifier_dev"
 ```
@@ -59,7 +59,7 @@ El script aplica permisos idempotentes de Unity Catalog. Después del primer bun
 deploy se completa `CAN_MANAGE_RUN` sobre el job y `CAN_MANAGE` sobre el endpoint
 mediante la UI o API de permisos.
 
-El workflow ejecuta `tools/scripts/databricks_preflight.py` antes de validar el bundle.
+El workflow ejecuta `ops/databricks/preflight.py` antes de validar el bundle.
 Comprueba identidad OIDC, cuenta activa, tabla, modelo y grants efectivos. Falla antes
 de modificar infraestructura.
 

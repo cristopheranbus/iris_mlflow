@@ -1,6 +1,7 @@
 # Notebooks de entrenamiento
 
-`random_forest.ipynb` y `xgboost.ipynb` son notebooks ejecutables y auditables.
+`notebooks/training/random_forest.ipynb` y `notebooks/training/xgboost.ipynb`
+son notebooks ejecutables y auditables.
 Conservan explícitamente las llamadas nativas del framework y de MLflow; las
 utilidades compartidas se usan sólo para configuración, datos, evaluación
 homologada y metadatos del registry.
@@ -49,7 +50,7 @@ En local:
 
 ```text
 Dataset: data/local/iris_features.csv
-Tracking/Registry: sqlite:///mlflow.db
+Tracking/Registry: sqlite:///.local/mlflow/mlflow.db
 Modelo: iris_classifier
 ```
 
@@ -78,17 +79,17 @@ Desde la raíz del proyecto:
 
 ```powershell
 $env:IRIS_RUNTIME = "local"
-uv run --project tools jupyter notebook random_forest.ipynb
+uv run --group notebooks jupyter notebook notebooks/training/random_forest.ipynb
 ```
 
-Para XGBoost cambia el archivo por `xgboost.ipynb`. No es necesario definir las
+Para XGBoost cambia el archivo por `notebooks/training/xgboost.ipynb`. No es necesario definir las
 URI de MLflow manualmente: la configuración local las resuelve contra la raíz
 del proyecto.
 
 ## Ejecución en Databricks
 
 Importa o despliega el proyecto, asocia el notebook a compute compatible y
-ejecuta todas las celdas en orden. La primera celda de código instala `tools` y
+ejecuta todas las celdas en orden. La primera celda de código instala el proyecto y
 reinicia Python; después del reinicio el notebook continúa con configuración y
 entrenamiento. El runtime Databricks nunca lee el CSV local.
 
@@ -126,5 +127,4 @@ debe iniciar la promoción.
 - Experimento eliminado: la inicialización intenta restaurarlo automáticamente.
 - Artefactos faltantes: revisar la excepción de la última celda y el run.
 - Versión sin alias: comprobar permisos de escritura sobre el modelo registrado.
-- Base local vacía en la UI: iniciar MLflow desde la raíz usando `mlflow.db`.
-
+- Base local vacía en la UI: iniciar MLflow desde la raíz usando `.local/mlflow/mlflow.db`.
