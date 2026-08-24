@@ -14,7 +14,7 @@ ROOT = Path(__file__).parents[2]
 
 
 def test_relative_documentation_links_resolve() -> None:
-    documents = [ROOT / "readme.md", *(ROOT / "docs").rglob("*.md")]
+    documents = [ROOT / "README.md", *(ROOT / "docs").rglob("*.md")]
     pattern = re.compile(r"\[[^]]+\]\((?!https?://|#)([^)#]+)(?:#[^)]+)?\)")
     missing: list[str] = []
     for document in documents:
