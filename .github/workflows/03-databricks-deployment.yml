@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: databricks-deployment-${{ github.ref }}-${{ inputs.target || 'dev' }}
@@ -36,6 +35,9 @@ jobs:
     if: vars.DATABRICKS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: ${{ inputs.target == 'prod' && 'databricks-production' || 'databricks-dev' }}
+    permissions:
+      contents: read
+      id-token: write
     env:
       DATABRICKS_AUTH_TYPE: github-oidc
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
@@ -72,6 +74,9 @@ jobs:
     needs: validate-bundle
     runs-on: ubuntu-latest
     environment: databricks-dev
+    permissions:
+      contents: read
+      id-token: write
     env:
       DATABRICKS_AUTH_TYPE: github-oidc
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
@@ -102,6 +107,9 @@ jobs:
     needs: validate-bundle
     runs-on: ubuntu-latest
     environment: databricks-production
+    permissions:
+      contents: read
+      id-token: write
     env:
       DATABRICKS_AUTH_TYPE: github-oidc
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}

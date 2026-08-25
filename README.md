@@ -390,6 +390,8 @@ permisos, preflight y reactivación del despliegue.
 - [Checklist de publicación](docs/release-checklist.md): controles previos y
   posteriores al release.
 - [Rollback](docs/rollback.md): restauración del endpoint y de `Champion`.
+- [Política de promoción](docs/promotion-policy.md): reglas versionadas para pasar de Challenger a Champion.
+- [Monitoreo](docs/monitoring.md): inference tables, umbrales y alertas mediante GitHub Issues.
 - [Pruebas](docs/testing.md): estrategia, ejecución y catálogo detallado de pruebas unitarias, de integración y de contratos.
 
 ## Calidad y contribución

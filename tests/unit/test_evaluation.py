@@ -14,6 +14,7 @@ from iris_mlflow_utils.evaluation import (
     build_evaluation_artifacts,
     build_metrics_summary_table,
     build_probability_metrics,
+    cross_validate_classifier,
     evaluate_model,
     evaluate_train_test,
     flatten_metrics,
@@ -117,12 +118,34 @@ def test_multiclass_probability_metrics_and_artifacts(tmp_path: Path) -> None:
 
     assert metrics["roc_auc_ovr_macro"] > 0.9
     assert metrics["log_loss"] >= 0
+    assert metrics["brier_score"] >= 0
+    assert 0 <= metrics["expected_calibration_error"] <= 1
     assert {"confusion_matrix.png", "roc_curve_by_class.png", "lift_curve_macro.png"}.issubset(
         paths
     )
     gain = pd.read_json(tmp_path / "evaluation" / "cumulative_gain_data.json")
     assert np.allclose(gain.groupby("class_id", as_index=False).tail(1)["cumulative_gain"], 1.0)
     assert "feature_importance.json" not in paths
+
+
+def test_repeated_stratified_cross_validation_is_reproducible() -> None:
+    iris = load_iris()
+    features = pd.DataFrame(iris.data, columns=iris.feature_names)
+    target = np.asarray(iris.target)
+    estimator = LogisticRegression(max_iter=500)
+
+    first = cross_validate_classifier(estimator, features, target, [0, 1, 2], folds=3, repeats=2)
+    second = cross_validate_classifier(estimator, features, target, [0, 1, 2], folds=3, repeats=2)
+
+    assert len(first.fold_metrics) == 6
+    assert first.summary == second.summary
+    assert first.summary["cv_f1_weighted_mean"] > 0.9
+
+
+def test_cross_validation_rejects_invalid_shape() -> None:
+    features, target = binary_data()
+    with pytest.raises(ValueError, match="folds"):
+        cross_validate_classifier(LogisticRegression(), features, target, [0, 1], folds=1)
 
 
 def test_artifacts_include_feature_importance_when_model_exposes_it(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ from .runtime import RuntimeMode, detect_runtime, get_dbutils, get_runtime_param
 
 _MODEL_TYPES = {"random_forest", "xgboost", "neural_network"}
 _MODEL_FRAMEWORKS = {"sklearn", "xgboost", "pytorch", "tensorflow"}
+_PROMOTION_OPERATORS = {">=", "<=", ">", "<"}
 
 
 def is_databricks() -> bool:
@@ -48,6 +49,105 @@ def load_file_config(path: Path | None = None) -> dict[str, Any]:
 
     with _find_config_path(path).open("rb") as config_file:
         return tomllib.load(config_file)
+
+
+@dataclass(frozen=True)
+class PromotionRule:
+    """One declarative, non-executable model-promotion rule."""
+
+    name: str
+    metric: str
+    operator: str
+    value: float | None = None
+    baseline: str | None = None
+    allowed_regression: float = 0.0
+    required: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.name.strip() or not self.metric.strip():
+            raise ValueError("Las reglas de promoción requieren name y metric.")
+        if self.operator not in _PROMOTION_OPERATORS:
+            raise ValueError(f"Operador de promoción no soportado: {self.operator}.")
+        if self.baseline not in {None, "champion"}:
+            raise ValueError("baseline sólo puede ser champion.")
+        if self.baseline is None and self.value is None:
+            raise ValueError("Una regla absoluta requiere value.")
+        if self.baseline is not None and self.value is not None:
+            raise ValueError("Una regla relativa no puede declarar value.")
+        if self.allowed_regression < 0:
+            raise ValueError("allowed_regression no puede ser negativo.")
+
+
+@dataclass(frozen=True)
+class PromotionPolicy:
+    """Versioned collection of rules governing Champion promotion."""
+
+    name: str
+    version: str
+    rules: tuple[PromotionRule, ...]
+    combination: str = "all"
+    require_approval: bool = True
+    require_smoke_test: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.name.strip() or not self.version.strip():
+            raise ValueError("La política requiere name y version.")
+        if self.combination != "all":
+            raise ValueError("Sólo se soporta combination=all.")
+        if not self.rules:
+            raise ValueError("La política requiere al menos una regla.")
+        names = [rule.name for rule in self.rules]
+        if len(names) != len(set(names)):
+            raise ValueError("Los nombres de reglas deben ser únicos.")
+
+
+def _find_promotion_policy_path(profile: str, training_path: Path | None = None) -> Path:
+    if profile not in {"dev", "prod"}:
+        raise ValueError("IRIS_PROMOTION_PROFILE debe ser dev o prod.")
+    configured = os.getenv("IRIS_PROMOTION_POLICY_PATH", "").strip()
+    if configured:
+        candidate = Path(configured).expanduser().resolve()
+    else:
+        candidate = _find_config_path(training_path).parent / f"promotion.{profile}.toml"
+    if not candidate.is_file():
+        raise FileNotFoundError(f"No se encontró la política de promoción: {candidate}")
+    return candidate
+
+
+def load_promotion_policy(
+    *, profile: str | None = None, training_path: Path | None = None
+) -> PromotionPolicy:
+    """Load and validate a versioned dev or production promotion policy."""
+
+    selected_profile = (
+        (profile if profile is not None else os.environ.get("IRIS_PROMOTION_PROFILE", "dev"))
+        .strip()
+        .lower()
+    )
+    path = _find_promotion_policy_path(selected_profile, training_path)
+    with path.open("rb") as policy_file:
+        payload = tomllib.load(policy_file)
+    policy = dict(payload.get("policy", {}))
+    rules = tuple(
+        PromotionRule(
+            name=str(rule.get("name", "")),
+            metric=str(rule.get("metric", "")),
+            operator=str(rule.get("operator", "")),
+            value=None if "value" not in rule else float(rule["value"]),
+            baseline=None if "baseline" not in rule else str(rule["baseline"]),
+            allowed_regression=float(rule.get("allowed_regression", 0.0)),
+            required=bool(rule.get("required", True)),
+        )
+        for rule in payload.get("rules", [])
+    )
+    return PromotionPolicy(
+        name=str(policy.get("name", "")),
+        version=str(policy.get("version", "")),
+        combination=str(policy.get("combination", "all")),
+        require_approval=bool(policy.get("require_approval", True)),
+        require_smoke_test=bool(policy.get("require_smoke_test", True)),
+        rules=rules,
+    )
 
 
 def _widget_overrides_enabled() -> bool:
@@ -164,6 +264,7 @@ class DeploymentConfig:
     serving_timeout_seconds: int = 900
     serving_poll_seconds: int = 15
     runtime_mode: RuntimeMode = "databricks"
+    promotion_policy: PromotionPolicy | None = None
 
     def __post_init__(self) -> None:
         valid_name = (
@@ -198,6 +299,8 @@ def build_deployment_config() -> DeploymentConfig:
     deployment = dict(file_config.get("deployment", {}))
     runtime_mode = detect_runtime()
     runtime_config = dict(file_config.get("runtime", {}).get(runtime_mode, {}))
+    default_profile = "dev" if runtime_mode == "local" else "prod"
+    promotion_profile = get_setting("IRIS_PROMOTION_PROFILE", default_profile).lower()
 
     def setting(name: str, fallback: Any) -> str:
         return get_setting(name, str(fallback), name)
@@ -240,6 +343,7 @@ def build_deployment_config() -> DeploymentConfig:
             setting("IRIS_SERVING_POLL_SECONDS", deployment.get("serving_poll_seconds", 15))
         ),
         runtime_mode=runtime_mode,
+        promotion_policy=load_promotion_policy(profile=promotion_profile),
     )
 
 
