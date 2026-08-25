@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: databricks-deployment-${{ github.ref }}-${{ inputs.target || 'dev' }}
@@ -36,6 +35,9 @@ jobs:
     if: vars.DATABRICKS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: ${{ inputs.target == 'prod' && 'databricks-production' || 'databricks-dev' }}
+    permissions:
+      contents: read
+      id-token: write
     env:
       DATABRICKS_AUTH_TYPE: github-oidc
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
@@ -50,7 +52,7 @@ jobs:
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@903f2679e2ca728decb4a78c74d57570f8e8d2e5
+        uses: databricks/setup-cli@6bb7075f85b326f8b9ce160933dfe9bcd63c8121
         with:
           version: 1.11.0
       - name: Databricks preflight
@@ -72,6 +74,9 @@ jobs:
     needs: validate-bundle
     runs-on: ubuntu-latest
     environment: databricks-dev
+    permissions:
+      contents: read
+      id-token: write
     env:
       DATABRICKS_AUTH_TYPE: github-oidc
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
@@ -84,7 +89,7 @@ jobs:
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@903f2679e2ca728decb4a78c74d57570f8e8d2e5
+        uses: databricks/setup-cli@6bb7075f85b326f8b9ce160933dfe9bcd63c8121
         with:
           version: 1.11.0
       - name: Deploy development target
@@ -102,6 +107,9 @@ jobs:
     needs: validate-bundle
     runs-on: ubuntu-latest
     environment: databricks-production
+    permissions:
+      contents: read
+      id-token: write
     env:
       DATABRICKS_AUTH_TYPE: github-oidc
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
@@ -116,7 +124,7 @@ jobs:
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@903f2679e2ca728decb4a78c74d57570f8e8d2e5
+        uses: databricks/setup-cli@6bb7075f85b326f8b9ce160933dfe9bcd63c8121
         with:
           version: 1.11.0
       - name: Deploy production target

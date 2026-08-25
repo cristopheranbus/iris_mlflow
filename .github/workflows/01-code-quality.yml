@@ -116,11 +116,25 @@ jobs:
         # MLflow 3.15 currently constrains cryptography below the fixed release.
         # Keep this single exception visible; every other advisory still fails CI.
         run: uv run --no-sync pip-audit --ignore-vuln PYSEC-2026-3552
+      - name: Generate CycloneDX SBOM
+        run: |
+          mkdir -p .local/sbom
+          uv run --no-sync pip-audit --ignore-vuln PYSEC-2026-3552 --format cyclonedx-json --output .local/sbom/cyclonedx.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cyclonedx-sbom
+          path: .local/sbom/cyclonedx.json
+          if-no-files-found: error
 
   package-build:
     name: Build and smoke-test package
     needs: [test-suite, static-analysis, dependency-audit]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -138,3 +152,14 @@ jobs:
         run: uv build
       - name: Install and smoke-test built wheel
         run: python quality/smoke_wheel.py --python 3.12
+      - name: Upload distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+      - name: Attest build provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: dist/*

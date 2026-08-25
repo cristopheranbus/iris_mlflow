@@ -8,11 +8,14 @@ logging.getLogger("mlflow.tracking.context.registry").setLevel(logging.ERROR)
 
 from .config import (  # noqa: E402
     DeploymentConfig,
+    PromotionPolicy,
+    PromotionRule,
     TrainingConfig,
     build_config,
     build_deployment_config,
     build_runtime_config,
     load_file_config,
+    load_promotion_policy,
 )
 from .data import (  # noqa: E402
     DatasetBundle,
@@ -24,6 +27,7 @@ from .data import (  # noqa: E402
 )
 from .deployment import (  # noqa: E402
     PromotionDecision,
+    RuleResult,
     ServingEndpointChange,
     ServingEndpointSnapshot,
     capture_serving_endpoint,
@@ -35,11 +39,13 @@ from .deployment import (  # noqa: E402
     wait_for_endpoint_ready,
 )
 from .evaluation import (  # noqa: E402
+    CrossValidationSummary,
     EvaluationResult,
     build_classification_table,
     build_evaluation_artifacts,
     build_metrics_summary_table,
     build_probability_metrics,
+    cross_validate_classifier,
     evaluate_model,
     evaluate_train_test,
 )
@@ -48,6 +54,14 @@ from .local_deployment import (  # noqa: E402
     approve_locally,
     simulate_local_deployment,
     write_manifest,
+)
+from .monitoring import (  # noqa: E402
+    MonitoringAlert,
+    MonitoringConfig,
+    MonitoringDecision,
+    MonitoringSnapshot,
+    evaluate_monitoring,
+    load_monitoring_config,
 )
 from .registry import (  # noqa: E402
     build_registry_client,
@@ -77,16 +91,21 @@ __all__ = [
     "EvaluationResult",
     "TrainingConfig",
     "DeploymentConfig",
+    "PromotionPolicy",
+    "PromotionRule",
     "build_classification_table",
     "build_config",
     "build_deployment_config",
     "build_runtime_config",
     "load_file_config",
+    "load_promotion_policy",
     "build_metrics_summary_table",
     "build_evaluation_artifacts",
     "build_probability_metrics",
     "evaluate_model",
     "evaluate_train_test",
+    "cross_validate_classifier",
+    "CrossValidationSummary",
     "ensure_feature_table",
     "build_registry_client",
     "ensure_mlflow_experiment",
@@ -100,6 +119,7 @@ __all__ = [
     "load_dataset_from_spark",
     "load_dataset_for_runtime",
     "PromotionDecision",
+    "RuleResult",
     "ServingEndpointSnapshot",
     "ServingEndpointChange",
     "capture_serving_endpoint",
@@ -112,6 +132,12 @@ __all__ = [
     "approve_locally",
     "simulate_local_deployment",
     "write_manifest",
+    "MonitoringAlert",
+    "MonitoringConfig",
+    "MonitoringDecision",
+    "MonitoringSnapshot",
+    "evaluate_monitoring",
+    "load_monitoring_config",
     "predict",
     "predict_dataframe",
     "read_configuration",

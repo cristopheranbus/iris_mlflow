@@ -1,1 +1,7 @@
+# Initial single-maintainer policy. Add future reviewers on the same lines,
+# for example: @cristopheranbus @second-maintainer
 * @cristopheranbus
+/config/promotion*.toml @cristopheranbus
+/src/** @cristopheranbus
+/.github/workflows/** @cristopheranbus
+/databricks.yml @cristopheranbus

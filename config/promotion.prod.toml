@@ -1,0 +1,32 @@
+[policy]
+name = "iris-production"
+version = "1.0"
+combination = "all"
+require_approval = true
+require_smoke_test = true
+
+[[rules]]
+name = "minimum_f1"
+metric = "test_f1_weighted"
+operator = ">="
+value = 0.90
+
+[[rules]]
+name = "minimum_accuracy"
+metric = "test_accuracy"
+operator = ">="
+value = 0.90
+
+[[rules]]
+name = "f1_vs_champion"
+metric = "test_f1_weighted"
+operator = ">="
+baseline = "champion"
+allowed_regression = 0.01
+
+[[rules]]
+name = "maximum_log_loss"
+metric = "test_log_loss"
+operator = "<="
+value = 0.30
+required = false

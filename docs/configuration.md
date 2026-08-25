@@ -41,6 +41,11 @@ La sección `[deployment]` define:
 - `max_metric_regression` contra Champion.
 - `required_approval_tag`.
 - Aliases Champion y Challenger.
+
+Los thresholds históricos se conservan temporalmente por compatibilidad. Las
+decisiones nuevas usan los perfiles descritos en
+[`promotion-policy.md`](promotion-policy.md). El monitoreo operacional usa
+[`config/monitoring.toml`](../config/monitoring.toml).
 - Timeout y polling de Model Serving.
 - El nombre del job y el endpoint por ambiente pertenecen al bundle.
 

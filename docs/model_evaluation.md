@@ -17,6 +17,10 @@ en MLflow bajo `evaluation/`.
 
 El gate inicial exige `test_f1_weighted >= 0.90`,
 `test_accuracy >= 0.90` y una degradación máxima de `0.01` frente a Champion.
+Estos valores pertenecen ahora a `config/promotion.prod.toml` y pueden cambiarse
+sin modificar Python. El entrenamiento registra además cross-validation
+estratificada repetida, intervalos de confianza normales, Brier score, error de
+calibración y linaje del dataset mediante `mlflow.log_input()`.
 
 Los artefactos de evaluación se generan con la misma utilidad en modo local y
 Databricks: matriz de confusión, ROC, Precision-Recall, lift, cumulative gain,

@@ -5,7 +5,8 @@ from typing import Any
 
 import pytest
 
-from iris_mlflow_utils.config import DeploymentConfig
+import iris_mlflow_utils.deployment as deployment_module
+from iris_mlflow_utils.config import DeploymentConfig, PromotionPolicy, PromotionRule
 from iris_mlflow_utils.deployment import (
     ServingEndpointChange,
     capture_serving_endpoint,
@@ -71,6 +72,78 @@ def test_promotion_gate_covers_business_decisions(
 def test_promotion_gate_rejects_non_finite_metrics(value: float) -> None:
     with pytest.raises(ValueError, match="finitos"):
         evaluate_promotion_gate({"test_f1_weighted": value, "test_accuracy": 0.95}, None, config())
+
+
+def test_declarative_policy_evaluates_absolute_relative_and_advisory_rules() -> None:
+    policy = PromotionPolicy(
+        "production",
+        "2",
+        (
+            PromotionRule("minimum", "test_f1_weighted", ">=", value=0.90),
+            PromotionRule(
+                "relative",
+                "test_f1_weighted",
+                ">=",
+                baseline="champion",
+                allowed_regression=0.01,
+            ),
+            PromotionRule("optional", "test_log_loss", "<=", value=0.3, required=False),
+        ),
+    )
+    configured = DeploymentConfig(
+        model_name="workspace.default.iris",
+        endpoint_name="iris",
+        promotion_policy=policy,
+    )
+    decision = evaluate_promotion_gate(
+        {"test_f1_weighted": 0.94}, {"test_f1_weighted": 0.96}, configured
+    )
+
+    assert decision.passed is False
+    assert decision.reason == "rule_failed:relative"
+    assert decision.policy_version == "2"
+    assert decision.rule_results[-1].status == "skipped"
+
+
+def test_relative_rule_is_skipped_for_first_champion() -> None:
+    policy = PromotionPolicy(
+        "production",
+        "1",
+        (PromotionRule("relative", "score", ">=", baseline="champion"),),
+    )
+    configured = DeploymentConfig(
+        model_name="workspace.default.iris",
+        endpoint_name="iris",
+        promotion_policy=policy,
+    )
+    decision = evaluate_promotion_gate({"score": 0.9}, None, configured)
+    assert decision.passed and decision.rule_results[0].status == "skipped"
+
+
+def test_declarative_policy_rejects_missing_and_non_finite_metrics() -> None:
+    policy = PromotionPolicy(
+        "production",
+        "1",
+        (PromotionRule("relative", "loss", "<=", baseline="champion", allowed_regression=0.1),),
+    )
+    configured = DeploymentConfig(
+        model_name="workspace.default.iris", endpoint_name="iris", promotion_policy=policy
+    )
+
+    missing = evaluate_promotion_gate({}, {"loss": 0.2}, configured)
+    missing_champion = evaluate_promotion_gate({"loss": 0.2}, {}, configured)
+    passed = evaluate_promotion_gate({"loss": 0.25}, {"loss": 0.2}, configured)
+
+    assert not missing.passed
+    assert not missing_champion.passed
+    assert passed.passed
+    assert passed.as_dict()["rules"][0]["expected_value"] == pytest.approx(0.3)
+    with pytest.raises(ValueError, match="debe ser finita"):
+        evaluate_promotion_gate({"loss": float("nan")}, {"loss": 0.2}, configured)
+    with pytest.raises(ValueError, match="Champion"):
+        evaluate_promotion_gate({"loss": 0.2}, {"loss": float("inf")}, configured)
+    with pytest.raises(ValueError, match="Operador"):
+        deployment_module._compare(1, "==", 1)
 
 
 class MissingEndpoint(RuntimeError):

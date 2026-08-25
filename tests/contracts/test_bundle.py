@@ -22,6 +22,11 @@ def test_bundle_declares_governed_isolated_deployment_jobs(repository_root: Path
     assert bundle["artifacts"]["iris_mlflow_tools"]["path"] == "."
     assert "./src" in bundle["sync"]["paths"]
     assert "./notebooks/training" in bundle["sync"]["paths"]
+    monitor = bundle["resources"]["jobs"]["model_monitoring"]
+    assert monitor["max_concurrent_runs"] == 1
+    assert monitor["tasks"][0]["spark_python_task"]["python_file"].endswith("monitor_endpoint.py")
+    assert bundle["targets"]["dev"]["variables"]["promotion_profile"] == "dev"
+    assert bundle["targets"]["prod"]["variables"]["promotion_profile"] == "prod"
 
 
 def test_connector_uses_bundle_managed_job_id(repository_root: Path) -> None:

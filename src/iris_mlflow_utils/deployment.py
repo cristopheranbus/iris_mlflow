@@ -7,7 +7,31 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from .config import DeploymentConfig
+from .config import DeploymentConfig, PromotionPolicy, PromotionRule
+
+
+@dataclass(frozen=True)
+class RuleResult:
+    """Auditable outcome for one declarative promotion rule."""
+
+    name: str
+    metric: str
+    status: str
+    candidate_value: float | None
+    expected_value: float | None
+    baseline_value: float | None = None
+    required: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "metric": self.metric,
+            "status": self.status,
+            "candidate_value": self.candidate_value,
+            "expected_value": self.expected_value,
+            "baseline_value": self.baseline_value,
+            "required": self.required,
+        }
 
 
 @dataclass(frozen=True)
@@ -22,6 +46,9 @@ class PromotionDecision:
     min_f1: float
     min_accuracy: float
     max_regression: float
+    policy_name: str = "legacy"
+    policy_version: str = "1"
+    rule_results: tuple[RuleResult, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +60,9 @@ class PromotionDecision:
             "min_test_f1_weighted": self.min_f1,
             "min_test_accuracy": self.min_accuracy,
             "max_metric_regression": self.max_regression,
+            "policy_name": self.policy_name,
+            "policy_version": self.policy_version,
+            "rules": [result.as_dict() for result in self.rule_results],
         }
 
 
@@ -124,7 +154,10 @@ def evaluate_promotion_gate(
     champion_metrics: dict[str, float] | None,
     config: DeploymentConfig,
 ) -> PromotionDecision:
-    """Apply absolute quality and Champion-regression gates."""
+    """Apply a declarative policy, falling back to the legacy fixed gate."""
+
+    if config.promotion_policy is not None:
+        return _evaluate_policy(metrics, champion_metrics, config.promotion_policy)
 
     candidate_f1 = float(metrics.get("test_f1_weighted", metrics.get("test_f1", 0.0)))
     candidate_accuracy = float(metrics.get("test_accuracy", 0.0))
@@ -155,6 +188,115 @@ def evaluate_promotion_gate(
         min_f1=config.min_test_f1_weighted,
         min_accuracy=config.min_test_accuracy,
         max_regression=config.max_metric_regression,
+    )
+
+
+def _compare(left: float, operator: str, right: float) -> bool:
+    comparisons = {
+        ">=": left >= right,
+        "<=": left <= right,
+        ">": left > right,
+        "<": left < right,
+    }
+    try:
+        return comparisons[operator]
+    except KeyError as error:
+        raise ValueError(f"Operador de promoción no soportado: {operator}.") from error
+
+
+def _evaluate_rule(
+    rule: PromotionRule,
+    metrics: dict[str, float],
+    champion_metrics: dict[str, float] | None,
+) -> RuleResult:
+    candidate_raw = metrics.get(rule.metric)
+    if candidate_raw is None:
+        return RuleResult(
+            rule.name,
+            rule.metric,
+            "failed" if rule.required else "skipped",
+            None,
+            rule.value,
+            required=rule.required,
+        )
+    candidate = float(candidate_raw)
+    if not math.isfinite(candidate):
+        raise ValueError(f"La métrica {rule.metric} debe ser finita.")
+    baseline_value: float | None = None
+    expected = rule.value
+    if rule.baseline == "champion":
+        if champion_metrics is None:
+            return RuleResult(
+                rule.name, rule.metric, "skipped", candidate, None, required=rule.required
+            )
+        champion_raw = champion_metrics.get(rule.metric)
+        if champion_raw is None:
+            return RuleResult(
+                rule.name, rule.metric, "failed", candidate, None, required=rule.required
+            )
+        baseline_value = float(champion_raw)
+        if not math.isfinite(baseline_value):
+            raise ValueError(f"La métrica Champion {rule.metric} debe ser finita.")
+        expected = (
+            baseline_value - rule.allowed_regression
+            if rule.operator in {">=", ">"}
+            else baseline_value + rule.allowed_regression
+        )
+    assert expected is not None
+    status = "passed" if _compare(candidate, rule.operator, expected) else "failed"
+    return RuleResult(
+        rule.name,
+        rule.metric,
+        status,
+        candidate,
+        expected,
+        baseline_value,
+        rule.required,
+    )
+
+
+def _evaluate_policy(
+    metrics: dict[str, float],
+    champion_metrics: dict[str, float] | None,
+    policy: PromotionPolicy,
+) -> PromotionDecision:
+    results = tuple(_evaluate_rule(rule, metrics, champion_metrics) for rule in policy.rules)
+    failed = [result for result in results if result.required and result.status == "failed"]
+    candidate_f1 = float(metrics.get("test_f1_weighted", metrics.get("test_f1", 0.0)))
+    candidate_accuracy = float(metrics.get("test_accuracy", 0.0))
+    champion_f1 = None
+    if champion_metrics is not None:
+        champion_f1 = float(
+            champion_metrics.get("test_f1_weighted", champion_metrics.get("test_f1", 0.0))
+        )
+    absolute_f1 = next(
+        (rule.value for rule in policy.rules if rule.metric == "test_f1_weighted" and rule.value),
+        0.0,
+    )
+    absolute_accuracy = next(
+        (rule.value for rule in policy.rules if rule.metric == "test_accuracy" and rule.value),
+        0.0,
+    )
+    relative_f1 = next(
+        (
+            rule.allowed_regression
+            for rule in policy.rules
+            if rule.metric == "test_f1_weighted" and rule.baseline == "champion"
+        ),
+        0.0,
+    )
+    return PromotionDecision(
+        passed=not failed,
+        reason="all_quality_gates_passed" if not failed else f"rule_failed:{failed[0].name}",
+        candidate_f1=candidate_f1,
+        candidate_accuracy=candidate_accuracy,
+        champion_f1=champion_f1,
+        min_f1=float(absolute_f1),
+        min_accuracy=float(absolute_accuracy),
+        max_regression=float(relative_f1),
+        policy_name=policy.name,
+        policy_version=policy.version,
+        rule_results=results,
     )
 
 

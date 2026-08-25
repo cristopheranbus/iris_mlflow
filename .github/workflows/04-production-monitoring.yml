@@ -1,0 +1,74 @@
+name: 04 · Production model monitoring
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Databricks target to monitor
+        required: true
+        type: choice
+        default: prod
+        options: [dev, prod]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: production-monitoring-${{ inputs.target || 'prod' }}
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    if: vars.DATABRICKS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target == 'dev' && 'databricks-dev' || 'databricks-production' }}
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      MONITOR_TARGET: ${{ inputs.target || 'prod' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Databricks CLI
+        uses: databricks/setup-cli@6bb7075f85b326f8b9ce160933dfe9bcd63c8121
+        with:
+          version: 1.11.0
+      - name: Run alert-only production monitor
+        id: monitoring
+        continue-on-error: true
+        run: databricks bundle run -t "$MONITOR_TARGET" model_monitoring
+      - name: Ensure monitoring label exists
+        run: gh label create ml-monitoring --color B60205 --description "Production ML monitoring" --force
+      - name: Open or update deduplicated incident
+        if: steps.monitoring.outcome == 'failure'
+        env:
+          ISSUE_TITLE: "[ML monitoring] iris-classifier degraded"
+          ISSUE_BODY: |
+            The Databricks production monitor detected a degraded signal.
+
+            Review the workflow run and the inference table. Monitoring is alert-only and did not move the `Champion` alias.
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          issue_number="$(gh issue list --state open --label ml-monitoring --search "$ISSUE_TITLE in:title" --json number --jq '.[0].number')"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --body "$ISSUE_BODY"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY" --label ml-monitoring
+          fi
+      - name: Close recovered incidents
+        if: steps.monitoring.outcome == 'success'
+        run: |
+          gh issue list --state open --label ml-monitoring --search "[ML monitoring] iris-classifier degraded in:title" --json number --jq '.[].number' | while read -r issue_number; do
+            gh issue comment "$issue_number" --body "Monitoring recovered in run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."
+            gh issue close "$issue_number" --reason completed
+          done
+      - name: Fail workflow after incident handling
+        if: steps.monitoring.outcome == 'failure'
+        run: exit 1
