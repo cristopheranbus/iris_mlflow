@@ -17,6 +17,12 @@ variables:
   operators_group:
     description: Grupo con permiso para operar ejecuciones del job.
     default: users
+  promotion_profile:
+    description: Perfil versionado que gobierna la promoción del modelo.
+    default: dev
+  inference_table_name:
+    description: Tabla payload creada por Unity AI Gateway para observabilidad.
+    default: workspace.default.iris_classifier_dev_payload
 
 artifacts:
   iris_mlflow_tools:
@@ -30,6 +36,7 @@ sync:
     - ./deployment
     - ./src
     - ./config
+    - ./ops
 
 resources:
   jobs:
@@ -59,6 +66,7 @@ resources:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
               endpoint_name: "{{job.parameters.endpoint_name}}"
+              promotion_profile: ${var.promotion_profile}
             source: WORKSPACE
 
         - task_key: Approval_Check
@@ -72,6 +80,7 @@ resources:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
               endpoint_name: "{{job.parameters.endpoint_name}}"
+              promotion_profile: ${var.promotion_profile}
             source: WORKSPACE
 
         - task_key: deploy_model
@@ -84,6 +93,7 @@ resources:
               model_name: "{{job.parameters.model_name}}"
               model_version: "{{job.parameters.model_version}}"
               endpoint_name: "{{job.parameters.endpoint_name}}"
+              promotion_profile: ${var.promotion_profile}
             source: WORKSPACE
 
     connect_deployment_job:
@@ -107,6 +117,32 @@ resources:
               endpoint_name: ${var.serving_endpoint_name}
             source: WORKSPACE
 
+    model_monitoring:
+      name: ${var.deployment_job_name}-monitoring
+      description: Evalua salud operacional sin modificar el alias Champion.
+      max_concurrent_runs: 1
+      parameters:
+        - name: endpoint_name
+          default: ${var.serving_endpoint_name}
+        - name: inference_table
+          default: ${var.inference_table_name}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ${workspace.file_path}/dist/*.whl
+      tasks:
+        - task_key: monitor_endpoint
+          environment_key: default
+          spark_python_task:
+            python_file: ./ops/databricks/monitor_endpoint.py
+            parameters:
+              - --endpoint-name
+              - "{{job.parameters.endpoint_name}}"
+              - --inference-table
+              - "{{job.parameters.inference_table}}"
+
 targets:
   dev:
     default: true
@@ -115,6 +151,8 @@ targets:
       registered_model_name: workspace.default.iris_classifier_dev
       deployment_job_name: model-deployment-dev
       serving_endpoint_name: iris-classifier-dev
+      promotion_profile: dev
+      inference_table_name: workspace.default.iris_classifier_dev_payload
 
   prod:
     mode: production
@@ -126,6 +164,8 @@ targets:
       registered_model_name: workspace.default.iris_classifier
       deployment_job_name: model-deployment
       serving_endpoint_name: iris-classifier
+      promotion_profile: prod
+      inference_table_name: workspace.default.iris_classifier_payload
     resources:
       jobs:
         model_deployment:

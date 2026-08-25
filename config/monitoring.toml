@@ -1,0 +1,10 @@
+[monitoring]
+window_hours = 24
+minimum_observations = 100
+schedule = "0 */6 * * *"
+action = "alert"
+
+[thresholds]
+max_error_rate = 0.02
+max_p95_latency_ms = 750
+max_prediction_drift = 0.15

@@ -12,6 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.base import clone  # type: ignore[import-untyped]
 from sklearn.metrics import (  # type: ignore[import-untyped]
     accuracy_score,
     average_precision_score,
@@ -23,6 +24,7 @@ from sklearn.metrics import (  # type: ignore[import-untyped]
     roc_auc_score,
     roc_curve,
 )
+from sklearn.model_selection import RepeatedStratifiedKFold  # type: ignore[import-untyped]
 from sklearn.preprocessing import label_binarize  # type: ignore[import-untyped]
 
 
@@ -35,6 +37,54 @@ class EvaluationResult:
     confusion_matrix: np.ndarray
     predictions: np.ndarray
     probabilities: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class CrossValidationSummary:
+    """Reproducible fold metrics and normal-approximation confidence bounds."""
+
+    fold_metrics: tuple[dict[str, float], ...]
+    summary: dict[str, float]
+
+
+def cross_validate_classifier(
+    estimator: Any,
+    features: pd.DataFrame,
+    target: np.ndarray,
+    labels: list[int],
+    *,
+    folds: int = 5,
+    repeats: int = 3,
+    random_state: int = 42,
+    confidence_z: float = 1.96,
+) -> CrossValidationSummary:
+    """Evaluate fresh estimator clones with repeated stratified cross-validation."""
+
+    if folds < 2 or repeats < 1:
+        raise ValueError("Cross-validation requiere folds >= 2 y repeats >= 1.")
+    splitter = RepeatedStratifiedKFold(n_splits=folds, n_repeats=repeats, random_state=random_state)
+    results: list[dict[str, float]] = []
+    for train_indices, validation_indices in splitter.split(features, target):
+        candidate = clone(estimator)
+        candidate.fit(features.iloc[train_indices], target[train_indices])
+        evaluation = evaluate_model(
+            candidate, features.iloc[validation_indices], target[validation_indices], labels
+        )
+        metrics = dict(evaluation.metrics)
+        metrics.update(build_probability_metrics(evaluation, target[validation_indices], labels))
+        results.append(metrics)
+    summary: dict[str, float] = {}
+    metric_names = sorted({name for result in results for name in result})
+    for name in metric_names:
+        values = np.asarray([result[name] for result in results if name in result], dtype=float)
+        mean = float(values.mean())
+        standard_deviation = float(values.std(ddof=1)) if len(values) > 1 else 0.0
+        margin = confidence_z * standard_deviation / float(np.sqrt(len(values)))
+        summary[f"cv_{name}_mean"] = mean
+        summary[f"cv_{name}_std"] = standard_deviation
+        summary[f"cv_{name}_ci_lower"] = mean - margin
+        summary[f"cv_{name}_ci_upper"] = mean + margin
+    return CrossValidationSummary(tuple(results), summary)
 
 
 def evaluate_model(
@@ -368,8 +418,21 @@ def build_probability_metrics(
     if result.probabilities is None:
         return {}
     binary_target = label_binarize(target, classes=labels)
+    one_hot_target = np.column_stack([target == label for label in labels]).astype(float)
+    confidence = np.max(result.probabilities, axis=1)
+    correctness = (result.predictions == target).astype(float)
+    bin_edges = np.linspace(0.0, 1.0, 11)
+    calibration_error = 0.0
+    for lower, upper in zip(bin_edges[:-1], bin_edges[1:], strict=True):
+        selected = (confidence > lower) & (confidence <= upper)
+        if np.any(selected):
+            calibration_error += float(selected.mean()) * abs(
+                float(correctness[selected].mean()) - float(confidence[selected].mean())
+            )
     return {
         "log_loss": float(log_loss(target, result.probabilities, labels=labels)),
+        "brier_score": float(np.mean(np.sum((result.probabilities - one_hot_target) ** 2, axis=1))),
+        "expected_calibration_error": calibration_error,
         "roc_auc_ovr_macro": float(
             roc_auc_score(binary_target, result.probabilities, multi_class="ovr", average="macro")
         ),

@@ -10,6 +10,8 @@ import pytest
 import iris_mlflow_utils.config as config_module
 from iris_mlflow_utils.config import (
     DeploymentConfig,
+    PromotionPolicy,
+    PromotionRule,
     TrainingConfig,
     build_config,
     build_deployment_config,
@@ -17,6 +19,7 @@ from iris_mlflow_utils.config import (
     get_setting,
     is_databricks,
     load_file_config,
+    load_promotion_policy,
 )
 
 pytestmark = pytest.mark.unit
@@ -62,6 +65,67 @@ def test_load_file_config_fails_when_no_candidate_exists(
     monkeypatch.setattr("iris_mlflow_utils.config.Path.cwd", classmethod(lambda cls: isolated_root))
     with pytest.raises(FileNotFoundError, match="IRIS_CONFIG_PATH"):
         load_file_config()
+
+
+def test_versioned_promotion_profiles_are_loadable() -> None:
+    development = load_promotion_policy(profile="dev")
+    production = load_promotion_policy(profile="prod")
+
+    assert development.name == "iris-development"
+    assert production.name == "iris-production"
+    assert len(production.rules) == 4
+    assert production.rules[2].baseline == "champion"
+
+
+def test_promotion_policy_rejects_unsafe_or_ambiguous_rules() -> None:
+    with pytest.raises(ValueError, match="name y metric"):
+        PromotionRule("", "metric", ">=", value=1)
+    with pytest.raises(ValueError, match="Operador"):
+        PromotionRule("rule", "metric", "==", value=1)
+    with pytest.raises(ValueError, match="baseline"):
+        PromotionRule("rule", "metric", ">=", baseline="candidate")
+    with pytest.raises(ValueError, match="requiere value"):
+        PromotionRule("rule", "metric", ">=")
+    with pytest.raises(ValueError, match="no puede declarar value"):
+        PromotionRule("rule", "metric", ">=", value=1, baseline="champion")
+    with pytest.raises(ValueError, match="negativo"):
+        PromotionRule("rule", "metric", ">=", baseline="champion", allowed_regression=-1)
+    rule = PromotionRule("rule", "metric", ">=", value=0.9)
+    with pytest.raises(ValueError, match="name y version"):
+        PromotionPolicy("", "1", (rule,))
+    with pytest.raises(ValueError, match="combination"):
+        PromotionPolicy("policy", "1", (rule,), combination="any")
+    with pytest.raises(ValueError, match="al menos una"):
+        PromotionPolicy("policy", "1", ())
+    with pytest.raises(ValueError, match="únicos"):
+        PromotionPolicy(
+            "policy",
+            "1",
+            (
+                PromotionRule("duplicate", "metric", ">=", value=0.9),
+                PromotionRule("duplicate", "other", ">=", value=0.9),
+            ),
+        )
+
+
+def test_promotion_policy_path_validation_and_environment_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="dev o prod"):
+        load_promotion_policy(profile="staging")
+    monkeypatch.setenv("IRIS_PROMOTION_POLICY_PATH", str(tmp_path / "missing.toml"))
+    with pytest.raises(FileNotFoundError, match="política"):
+        load_promotion_policy(profile="dev")
+    monkeypatch.delenv("IRIS_PROMOTION_POLICY_PATH")
+
+    policy_path = tmp_path / "policy.toml"
+    policy_path.write_text(
+        '[policy]\nname="custom"\nversion="1"\n[[rules]]\n'
+        'name="score"\nmetric="score"\noperator=">="\nvalue=0.5\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("IRIS_PROMOTION_POLICY_PATH", str(policy_path))
+    assert load_promotion_policy(profile="prod").name == "custom"
 
 
 def test_get_setting_precedence_and_widget_fallback(monkeypatch: pytest.MonkeyPatch) -> None:

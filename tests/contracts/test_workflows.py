@@ -15,6 +15,7 @@ WORKFLOW_NAMES = {
     "01-code-quality.yml": "01 · Code quality and package validation",
     "02-security-scanning.yml": "02 · Repository security scanning",
     "03-databricks-deployment.yml": "03 · Databricks bundle validation and deployment",
+    "04-production-monitoring.yml": "04 · Production model monitoring",
 }
 
 
@@ -52,7 +53,12 @@ def test_code_quality_workflow_orders_validation_before_build(repository_root: P
     ]
     matrix = jobs["test-suite"]["strategy"]["matrix"]["include"]
     assert {entry["os"] for entry in matrix} == {"ubuntu-latest", "windows-latest"}
-    assert "quality/smoke_wheel.py" in jobs["package-build"]["steps"][-1]["run"]
+    assert any(
+        "quality/smoke_wheel.py" in step.get("run", "") for step in jobs["package-build"]["steps"]
+    )
+    assert any(
+        "attest-build-provenance" in step.get("uses", "") for step in jobs["package-build"]["steps"]
+    )
     assert workflow["concurrency"]["cancel-in-progress"] is True
     assert workflow["concurrency"]["group"].startswith("code-quality-")
 
@@ -65,7 +71,8 @@ def test_security_workflow_scans_complete_history(repository_root: Path) -> None
     workflow = _load(repository_root / ".github/workflows/02-security-scanning.yml")
     job = workflow["jobs"]["secret-history-scan"]
 
-    assert list(workflow["jobs"]) == ["secret-history-scan"]
+    assert list(workflow["jobs"]) == ["dependency-review", "secret-history-scan"]
+    assert "dependency-review-action" in workflow["jobs"]["dependency-review"]["steps"][0]["uses"]
     assert job["steps"][0]["with"]["fetch-depth"] == 0
     assert "gitleaks/gitleaks-action" in job["steps"][1]["uses"]
     assert workflow["permissions"] == {"contents": "read"}
@@ -88,7 +95,9 @@ def test_databricks_workflow_preserves_oidc_and_environment_guards(
     ]
     assert jobs["deploy-development"]["needs"] == "validate-bundle"
     assert jobs["deploy-production"]["needs"] == "validate-bundle"
-    assert workflow["permissions"] == {"contents": "read", "id-token": "write"}
+    assert workflow["permissions"] == {"contents": "read"}
+    for name in ("validate-bundle", "deploy-development", "deploy-production"):
+        assert jobs[name]["permissions"] == {"contents": "read", "id-token": "write"}
     assert workflow["concurrency"]["cancel-in-progress"] is False
 
     triggers = _triggers(workflow)
@@ -100,6 +109,18 @@ def test_databricks_workflow_preserves_oidc_and_environment_guards(
     assert "DATABRICKS_AUTH_TYPE: github-oidc" in source
     assert "DATABRICKS_CLIENT_SECRET" not in source
     assert "ops/databricks/preflight.py" in source
+
+
+def test_monitoring_workflow_is_alert_only_and_uses_oidc(repository_root: Path) -> None:
+    path = repository_root / ".github/workflows/04-production-monitoring.yml"
+    workflow = _load(path)
+    source = path.read_text(encoding="utf-8")
+
+    assert workflow["permissions"] == {"contents": "read", "id-token": "write", "issues": "write"}
+    assert workflow["concurrency"]["cancel-in-progress"] is True
+    assert "model_monitoring" in source
+    assert "gh issue create" in source
+    assert "promote_champion" not in source
 
 
 def test_all_external_actions_remain_pinned_to_commit_hashes(repository_root: Path) -> None:
