@@ -63,3 +63,10 @@ def test_python_version_and_default_development_groups_are_pinned() -> None:
     assert (ROOT / ".python-version").read_text(encoding="utf-8").strip() == "3.12"
     assert project["project"]["requires-python"] == ">=3.12,<3.13"
     assert project["tool"]["uv"]["default-groups"] == ["test", "quality"]
+    assert project["tool"]["uv"]["override-dependencies"] == ["cryptography>=50,<51"]
+
+
+def test_cryptography_lock_uses_the_patched_major_version() -> None:
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    cryptography = next(package for package in lock["package"] if package["name"] == "cryptography")
+    assert cryptography["version"].startswith("50.")

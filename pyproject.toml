@@ -43,6 +43,10 @@ test = [
 
 [tool.uv]
 default-groups = ["test", "quality"]
+# MLflow 3.15.2 todavía declara cryptography<50, aunque upstream ya aprobó
+# compatibilidad con 50.x en https://github.com/mlflow/mlflow/pull/24872.
+# Retirar este override cuando una versión publicada de MLflow incluya ese cambio.
+override-dependencies = ["cryptography>=50,<51"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/iris_mlflow_utils"]
