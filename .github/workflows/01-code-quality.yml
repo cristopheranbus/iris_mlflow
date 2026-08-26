@@ -44,6 +44,7 @@ jobs:
           version: "0.11.21"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          save-cache: false
       - name: Sync test dependencies
         run: uv sync --locked --no-default-groups --group test
       - name: Run full test suite with coverage
@@ -82,6 +83,7 @@ jobs:
           version: "0.11.21"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          save-cache: false
       - name: Sync static analysis dependencies
         run: uv sync --locked --no-default-groups --group test --group quality
       - name: Run Ruff lint
@@ -110,6 +112,7 @@ jobs:
           version: "0.11.21"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          save-cache: ${{ github.event_name == 'push' }}
       - name: Sync audit dependencies
         run: uv sync --locked --no-default-groups --group quality
       - name: Run pip-audit
@@ -146,6 +149,7 @@ jobs:
           version: "0.11.21"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          save-cache: false
       - name: Build wheel and source distribution
         run: uv build
       - name: Install and smoke-test built wheel

@@ -64,6 +64,8 @@ def test_code_quality_workflow_orders_validation_before_build(repository_root: P
     assert workflow["concurrency"]["cancel-in-progress"] is True
     assert workflow["concurrency"]["group"].startswith("code-quality-")
     assert "--ignore-vuln" not in source
+    assert source.count("save-cache: false") == 3
+    assert source.count("save-cache: ${{ github.event_name == 'push' }}") == 1
 
     triggers = _triggers(workflow)
     assert triggers["pull_request"]["branches"] == ["main", "dev"]
