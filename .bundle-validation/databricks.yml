@@ -1,0 +1,147 @@
+bundle:
+  name: iris_mlflow
+
+variables:
+  registered_model_name:
+    description: Nombre completo del modelo de Unity Catalog.
+    default: workspace.default.iris_classifier
+  deployment_job_name:
+    description: Nombre estable del Deployment Job conectado al modelo.
+    default: model-deployment
+  serving_endpoint_name:
+    description: Endpoint de Model Serving aislado por ambiente.
+    default: iris-classifier-dev
+  production_service_principal:
+    description: Application ID del service principal que ejecuta produccion.
+    default: "00000000-0000-0000-0000-000000000000"
+  operators_group:
+    description: Grupo con permiso para operar ejecuciones del job.
+    default: users
+
+artifacts:
+  iris_mlflow_tools:
+    type: whl
+    path: ./tools
+    build: uv build
+
+sync:
+  exclude:
+    - .git/**
+    - .pytest_cache/**
+    - .pytest-tmp/**
+    - .jupyter-data/**
+    - .ipython/**
+    - .local-*-runs/**
+    - mlruns/**
+    - artifacts/**
+    - local_backups/**
+    - tools/.venv/**
+    - tools/dist/**
+  paths:
+    - ./random_forest.ipynb
+    - ./xgboost.ipynb
+    - ./deployment
+    - ./tools/src
+    - ./config
+
+resources:
+  jobs:
+    model_deployment:
+      name: ${var.deployment_job_name}
+      description: Evalua, aprueba y despliega una version exacta del modelo registrado.
+      max_concurrent_runs: 1
+      parameters:
+        - name: model_name
+          default: ${var.registered_model_name}
+        - name: model_version
+          default: ""
+        - name: endpoint_name
+          default: ${var.serving_endpoint_name}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ${workspace.file_path}/tools/dist/*.whl
+      tasks:
+        - task_key: evaluate_model
+          environment_key: default
+          notebook_task:
+            notebook_path: ./deployment/evaluate_model.ipynb
+            base_parameters:
+              model_name: "{{job.parameters.model_name}}"
+              model_version: "{{job.parameters.model_version}}"
+              endpoint_name: "{{job.parameters.endpoint_name}}"
+            source: WORKSPACE
+
+        - task_key: Approval_Check
+          environment_key: default
+          depends_on:
+            - task_key: evaluate_model
+          max_retries: 0
+          notebook_task:
+            notebook_path: ./deployment/approval.ipynb
+            base_parameters:
+              model_name: "{{job.parameters.model_name}}"
+              model_version: "{{job.parameters.model_version}}"
+              endpoint_name: "{{job.parameters.endpoint_name}}"
+            source: WORKSPACE
+
+        - task_key: deploy_model
+          environment_key: default
+          depends_on:
+            - task_key: Approval_Check
+          notebook_task:
+            notebook_path: ./deployment/deploy_model.ipynb
+            base_parameters:
+              model_name: "{{job.parameters.model_name}}"
+              model_version: "{{job.parameters.model_version}}"
+              endpoint_name: "{{job.parameters.endpoint_name}}"
+            source: WORKSPACE
+
+    connect_deployment_job:
+      name: ${var.deployment_job_name}-connect
+      description: Conecta el job administrado por el bundle con el modelo registrado.
+      max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ${workspace.file_path}/tools/dist/*.whl
+      tasks:
+        - task_key: connect_deployment_job
+          environment_key: default
+          notebook_task:
+            notebook_path: ./deployment/create_deployment_job.ipynb
+            base_parameters:
+              model_name: ${var.registered_model_name}
+              deployment_job_id: ${resources.jobs.model_deployment.id}
+              endpoint_name: ${var.serving_endpoint_name}
+            source: WORKSPACE
+
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      registered_model_name: workspace.default.iris_classifier_dev
+      deployment_job_name: model-deployment-dev
+      serving_endpoint_name: iris-classifier-dev
+
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    run_as:
+      service_principal_name: ${var.production_service_principal}
+    variables:
+      registered_model_name: workspace.default.iris_classifier
+      deployment_job_name: model-deployment
+      serving_endpoint_name: iris-classifier
+    resources:
+      jobs:
+        model_deployment:
+          permissions:
+            - group_name: ${var.operators_group}
+              level: CAN_MANAGE_RUN

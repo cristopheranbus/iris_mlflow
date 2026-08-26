@@ -1,0 +1,7 @@
+[monitoring]
+window_hours=1
+minimum_observations=2
+[thresholds]
+max_error_rate=0.1
+max_p95_latency_ms=50
+max_prediction_drift=0.2

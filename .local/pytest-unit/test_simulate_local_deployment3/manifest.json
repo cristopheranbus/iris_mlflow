@@ -1,0 +1,13 @@
+{
+  "runtime": "local",
+  "model_name": "iris",
+  "model_version": "2",
+  "status": "validated",
+  "deployment_skipped": true,
+  "smoke_test": "passed",
+  "champion_alias": "Champion",
+  "previous_champion_version": "2",
+  "rollback_available": false,
+  "rollback_status": "not_required",
+  "promoted_at": "2026-08-21T21:42:00.231965+00:00"
+}

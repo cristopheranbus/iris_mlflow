@@ -1,0 +1,75 @@
+[common]
+registered_model_name = "workspace.default.iris_classifier"
+feature_table = "workspace.default.iris_features"
+feature_table_version = ""
+experiment_name = "/Shared/iris_mlflow"
+dataset_version = "iris-features-delta"
+champion_alias = "Champion"
+challenger_alias = "Challenger"
+author = "unknown"
+purpose = "baseline-classification"
+test_size = 0.20
+random_state = 42
+primary_metric = "test_f1_weighted"
+enable_tracing = true
+model_input_example_rows = 5
+target_column = "Species"
+model_registration_timeout_seconds = 300
+model_registration_poll_seconds = 5
+
+[runtime.local]
+dataset_path = "data/local/iris_features.csv"
+tracking_uri = "sqlite:///mlflow.db"
+registry_uri = "sqlite:///mlflow.db"
+registered_model_name = "iris_classifier"
+experiment_name = "iris_mlflow_local"
+auto_approve = true
+deployment_manifest_path = "artifacts/local_deployment_manifest.json"
+
+[runtime.databricks]
+feature_table = "workspace.default.iris_features"
+registered_model_name = "workspace.default.iris_classifier"
+registry_uri = "databricks-uc"
+
+[models.random_forest]
+model_type = "random_forest"
+model_framework = "sklearn"
+run_name = "random-forest-iris"
+
+[models.random_forest.params]
+n_estimators = 100
+max_depth = 4
+n_jobs = -1
+
+[models.xgboost]
+model_type = "xgboost"
+model_framework = "xgboost"
+run_name = "xgboost-iris"
+
+[models.xgboost.params]
+n_estimators = 100
+max_depth = 4
+learning_rate = 0.10
+subsample = 0.90
+colsample_bytree = 0.90
+objective = "multi:softprob"
+eval_metric = "mlogloss"
+n_jobs = 2
+
+[serving]
+timeout_seconds = 60
+secret_scope = ""
+secret_key = "databricks-token"
+
+[deployment]
+model_name = "workspace.default.iris_classifier"
+endpoint_name = "iris-classifier"
+min_test_f1_weighted = 0.90
+min_test_accuracy = 0.90
+max_metric_regression = 0.01
+required_approval_tag = "Approval_Check"
+champion_alias = "Champion"
+challenger_alias = "Challenger"
+smoke_test_rows = 1
+serving_timeout_seconds = 900
+serving_poll_seconds = 15

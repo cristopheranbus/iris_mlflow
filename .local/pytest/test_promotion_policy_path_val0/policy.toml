@@ -1,0 +1,8 @@
+[policy]
+name="custom"
+version="1"
+[[rules]]
+name="score"
+metric="score"
+operator=">="
+value=0.5
