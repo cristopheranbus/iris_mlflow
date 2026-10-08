@@ -52,7 +52,7 @@ jobs:
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@1c6cdbb6ac593995df697192e7f91d9d111cac19
+        uses: databricks/setup-cli@9230f12203ef173d0b901846f62a55ce997efef7
         with:
           version: 1.11.0
       - name: Databricks preflight
@@ -89,7 +89,7 @@ jobs:
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@1c6cdbb6ac593995df697192e7f91d9d111cac19
+        uses: databricks/setup-cli@9230f12203ef173d0b901846f62a55ce997efef7
         with:
           version: 1.11.0
       - name: Deploy development target
@@ -124,7 +124,7 @@ jobs:
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@1c6cdbb6ac593995df697192e7f91d9d111cac19
+        uses: databricks/setup-cli@9230f12203ef173d0b901846f62a55ce997efef7
         with:
           version: 1.11.0
       - name: Deploy production target
