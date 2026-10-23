@@ -25,7 +25,7 @@ uv run --group test python quality/check_coverage.py .local/coverage/coverage.js
 uv run --group quality ruff check --config quality/ruff.toml src tests quality ops
 uv run --group quality ruff format --check --config quality/ruff.toml src tests quality ops
 uv run --group test --group quality mypy --config-file quality/mypy.ini src tests quality ops
-uv run --group quality pip-audit --ignore-vuln PYSEC-2026-3552
+uv run --group quality pip-audit
 uv build
 uv run --no-sync python quality/smoke_wheel.py --python 3.12
 ```
