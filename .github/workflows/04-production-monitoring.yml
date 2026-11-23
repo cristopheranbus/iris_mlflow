@@ -36,7 +36,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@2da6132749245fbffb3c10d57cec219de3669967
+        uses: databricks/setup-cli@12452ad4003a2dd61d5a7cee30bc068f750a2e00
         with:
           version: 1.11.0
       - name: Run alert-only production monitor
