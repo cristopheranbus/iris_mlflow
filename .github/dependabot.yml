@@ -1,10 +1,48 @@
 version: 2
 updates:
-  - package-ecosystem: pip
+  - package-ecosystem: uv
     directory: /
+    target-branch: dev
     schedule:
-      interval: weekly
+      interval: monthly
+      time: "08:15"
+      timezone: America/Santiago
+    open-pull-requests-limit: 1
+    assignees:
+      - cristopheranbus
+    groups:
+      python-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      python-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
+          - minor
+          - patch
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
-      interval: weekly
+      interval: monthly
+      time: "08:30"
+      timezone: America/Santiago
+    open-pull-requests-limit: 1
+    assignees:
+      - cristopheranbus
+    groups:
+      actions-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      actions-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
+          - minor
+          - patch

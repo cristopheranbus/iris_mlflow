@@ -145,8 +145,8 @@ def test_node_actions_use_node24_compatible_releases(repository_root: Path) -> N
         path.read_text(encoding="utf-8")
         for path in (repository_root / ".github/workflows").glob("*.yml")
     )
-    setup_uv = "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
-    upload_artifact = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    setup_uv = "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
+    upload_artifact = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
     assert workflows.count(setup_uv) == 7
     assert workflows.count(upload_artifact) == 2
     assert "astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081" not in workflows

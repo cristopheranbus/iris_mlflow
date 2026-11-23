@@ -48,11 +48,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@1c6cdbb6ac593995df697192e7f91d9d111cac19
+        uses: databricks/setup-cli@2da6132749245fbffb3c10d57cec219de3669967
         with:
           version: 1.11.0
       - name: Databricks preflight
@@ -85,11 +85,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@1c6cdbb6ac593995df697192e7f91d9d111cac19
+        uses: databricks/setup-cli@2da6132749245fbffb3c10d57cec219de3669967
         with:
           version: 1.11.0
       - name: Deploy development target
@@ -120,11 +120,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.11.21"
       - name: Set up Databricks CLI
-        uses: databricks/setup-cli@1c6cdbb6ac593995df697192e7f91d9d111cac19
+        uses: databricks/setup-cli@2da6132749245fbffb3c10d57cec219de3669967
         with:
           version: 1.11.0
       - name: Deploy production target
